@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 13%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 22%;
+    --input: 217.2 32.6% 22%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.5rem;
+  }
+
+  /* Midnight Blue theme */
+  .dark.theme-midnight {
+    --background: 230 35% 10%;
+    --foreground: 210 40% 96%;
+    --card: 230 35% 12%;
+    --card-foreground: 210 40% 96%;
+    --primary: 230 80% 60%;
+    --primary-foreground: 230 35% 10%;
+    --secondary: 230 25% 18%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 230 25% 18%;
+    --muted-foreground: 220 15% 60%;
+    --accent: 230 25% 20%;
+    --accent-foreground: 210 40% 96%;
+    --border: 230 25% 22%;
+    --input: 230 25% 22%;
+    --ring: 230 80% 60%;
+  }
+
+  /* Forest Green theme */
+  .dark.theme-forest {
+    --background: 150 30% 9%;
+    --foreground: 140 20% 95%;
+    --card: 150 30% 11%;
+    --card-foreground: 140 20% 95%;
+    --primary: 150 60% 45%;
+    --primary-foreground: 150 30% 9%;
+    --secondary: 150 20% 16%;
+    --secondary-foreground: 140 20% 95%;
+    --muted: 150 20% 16%;
+    --muted-foreground: 150 15% 58%;
+    --accent: 150 20% 18%;
+    --accent-foreground: 140 20% 95%;
+    --border: 150 20% 20%;
+    --input: 150 20% 20%;
+    --ring: 150 60% 45%;
+  }
+
+  /* Rose theme */
+  .dark.theme-rose {
+    --background: 345 30% 10%;
+    --foreground: 340 20% 96%;
+    --card: 345 30% 12%;
+    --card-foreground: 340 20% 96%;
+    --primary: 345 75% 55%;
+    --primary-foreground: 345 30% 10%;
+    --secondary: 345 20% 17%;
+    --secondary-foreground: 340 20% 96%;
+    --muted: 345 20% 17%;
+    --muted-foreground: 340 15% 60%;
+    --accent: 345 20% 19%;
+    --accent-foreground: 340 20% 96%;
+    --border: 345 20% 21%;
+    --input: 345 20% 21%;
+    --ring: 345 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
+  }
+  #root {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Xterm.js container */
+.xterm-container {
+  width: 100%;
+  height: 100%;
+  user-select: text;
+}
+
+.xterm-container .xterm {
+  padding: 8px;
+}
+
+/* Drag region for window */
+.drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Layout components - prevent text selection */
+.layout-no-select {
+  user-select: none;
+}
+
+/* Transitions */
+.sidebar-transition {
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dialog overlay animation */
+.dialog-overlay {
+  animation: fade-in 0.15s ease-out;
+}
+
+/* Dialog content animation */
+.dialog-content {
+  animation: scale-in 0.2s ease-out;
+}
+
+/* Context menu animation */
+.context-menu {
+  animation: slide-up 0.15s ease-out;
+}
+
+/* File explorer hover effects */
+.file-row {
+  transition: background-color 0.1s ease;
+}
+
+.file-row:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+
+.file-row.selected {
+  background: hsl(var(--accent));
+}
+
+/* Resizable divider */
+.resizing-h * {
+  user-select: none !important;
+  cursor: row-resize !important;
+}
+.resizing-v * {
+  user-select: none !important;
+  cursor: col-resize !important;
+}
+
+/* Button press feedback */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}

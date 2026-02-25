@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npm run build:*)",
+      "WebSearch",
+      "WebFetch(domain:www.fileside.app)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:jiaopucun.com)",
+      "WebFetch(domain:www.electronjs.org)",
+      "Bash(curl:*)"
+    ]
+  }
+}
