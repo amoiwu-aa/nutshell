@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Container, Image, Play, Square, RefreshCw, Trash2, Terminal, FileText,
   Download, Upload, RotateCcw, Search, FolderOpen, ArrowUp, Home, ChevronRight,
@@ -26,6 +26,13 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
 
   // Log viewer state
   const [logViewer, setLogViewer] = useState<any>(null)
+  const logPreRef = useRef<HTMLPreElement>(null)
+
+  useEffect(() => {
+    if (logPreRef.current && logViewer && !logViewer.loading) {
+      logPreRef.current.scrollTop = logPreRef.current.scrollHeight
+    }
+  }, [logViewer?.logs, logViewer?.loading])
   // File browser state
   const [fileBrowser, setFileBrowser] = useState<any>(null)
   // Container detail state
@@ -422,7 +429,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
               <Search className="w-3.5 h-3.5 text-muted-foreground" />
               <input type="text" value={logViewer.searchText} onChange={(e) => setLogViewer((p: any) => p ? { ...p, searchText: e.target.value } : null)} placeholder="搜索日志..." className="flex-1 bg-background px-2 py-1 rounded text-xs outline-none border border-input" />
             </div>
-            <pre className="flex-1 p-4 text-xs font-mono bg-[#0d1117] text-[#c9d1d9] whitespace-pre-wrap overflow-auto min-h-[200px]" style={{ userSelect: 'text' }}
+            <pre ref={logPreRef} className="flex-1 p-4 text-xs font-mono bg-[#0d1117] text-[#c9d1d9] whitespace-pre-wrap overflow-auto min-h-[200px]" style={{ userSelect: 'text' }}
               onContextMenu={(e) => { const s = window.getSelection()?.toString(); if (s) { e.preventDefault(); navigator.clipboard.writeText(s) } }}>
               {logViewer.loading ? 'Loading...' : logViewer.searchText
                 ? logViewer.logs.split('\n').map((line: string, i: number) => {
