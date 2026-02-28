@@ -4,13 +4,16 @@ import { Sidebar } from './components/layout/Sidebar'
 import { TabBar } from './components/layout/TabBar'
 import { StatusBar } from './components/layout/StatusBar'
 import { ContentArea } from './components/layout/ContentArea'
-import { ConnectionDialog } from './components/connection/ConnectionDialog'
-import { SnippetManager } from './components/snippet/SnippetManager'
-import { MonitorPanel } from './components/monitor/MonitorPanel'
-import { BottomPanel } from './components/layout/BottomPanel'
+import { Suspense, lazy } from 'react'
 import { ResizableDivider } from './components/layout/ResizableDivider'
-import { SettingsDialog } from './components/settings/SettingsDialog'
-import { ScriptWorkshop } from './components/ai/ScriptWorkshop'
+
+const ConnectionDialog = lazy(() => import('./components/connection/ConnectionDialog').then(m => ({ default: m.ConnectionDialog })))
+const SnippetManager = lazy(() => import('./components/snippet/SnippetManager').then(m => ({ default: m.SnippetManager })))
+const MonitorPanel = lazy(() => import('./components/monitor/MonitorPanel').then(m => ({ default: m.MonitorPanel })))
+const BottomPanel = lazy(() => import('./components/layout/BottomPanel').then(m => ({ default: m.BottomPanel })))
+const SettingsDialog = lazy(() => import('./components/settings/SettingsDialog').then(m => ({ default: m.SettingsDialog })))
+const ScriptWorkshop = lazy(() => import('./components/ai/ScriptWorkshop').then(m => ({ default: m.ScriptWorkshop })))
+
 import { ToastProvider, useToast } from './components/ui/Toast'
 import { useConnectionStore, type ConnectionConfig, type Tab } from './stores/connectionStore'
 import { useSettingsStore } from './stores/settingsStore'
@@ -234,32 +237,32 @@ function AppContent() {
       })
     }
 
-    window.addEventListener('connection:open', handleOpen as EventListener)
-    window.addEventListener('connection:openSFTP', handleOpenSFTP as EventListener)
-    window.addEventListener('connection:openMonitor', handleOpenMonitor as EventListener)
-    window.addEventListener('connection:openDocker', handleOpenDocker as EventListener)
-    window.addEventListener('docker:execTerminal', handleDockerExecTerminal as EventListener)
+    window.addEventListener('connection:open', handleOpen as unknown as EventListener)
+    window.addEventListener('connection:openSFTP', handleOpenSFTP as unknown as EventListener)
+    window.addEventListener('connection:openMonitor', handleOpenMonitor as unknown as EventListener)
+    window.addEventListener('connection:openDocker', handleOpenDocker as unknown as EventListener)
+    window.addEventListener('docker:execTerminal', handleDockerExecTerminal as unknown as EventListener)
     window.addEventListener('app:openSnippets', handleOpenSnippets)
     window.addEventListener('app:openPortForward', handleOpenPortForward)
     window.addEventListener('app:openSettings', handleOpenSettings)
     window.addEventListener('app:openScriptWorkshop', handleOpenScriptWorkshop)
     window.addEventListener('app:toggleBottomPanel', handleToggleBottomPanel)
     window.addEventListener('app:toggleMonitorPanel', handleToggleMonitorPanel)
-    window.addEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as EventListener)
+    window.addEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as unknown as EventListener)
 
     return () => {
-      window.removeEventListener('connection:open', handleOpen as EventListener)
-      window.removeEventListener('connection:openSFTP', handleOpenSFTP as EventListener)
-      window.removeEventListener('connection:openMonitor', handleOpenMonitor as EventListener)
-      window.removeEventListener('connection:openDocker', handleOpenDocker as EventListener)
-      window.removeEventListener('docker:execTerminal', handleDockerExecTerminal as EventListener)
+      window.removeEventListener('connection:open', handleOpen as unknown as EventListener)
+      window.removeEventListener('connection:openSFTP', handleOpenSFTP as unknown as EventListener)
+      window.removeEventListener('connection:openMonitor', handleOpenMonitor as unknown as EventListener)
+      window.removeEventListener('connection:openDocker', handleOpenDocker as unknown as EventListener)
+      window.removeEventListener('docker:execTerminal', handleDockerExecTerminal as unknown as EventListener)
       window.removeEventListener('app:openSnippets', handleOpenSnippets)
       window.removeEventListener('app:openPortForward', handleOpenPortForward)
       window.removeEventListener('app:openSettings', handleOpenSettings)
       window.removeEventListener('app:openScriptWorkshop', handleOpenScriptWorkshop)
       window.removeEventListener('app:toggleBottomPanel', handleToggleBottomPanel)
       window.removeEventListener('app:toggleMonitorPanel', handleToggleMonitorPanel)
-      window.removeEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as EventListener)
+      window.removeEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as unknown as EventListener)
     }
   }, [addTab, toast])
 
@@ -308,7 +311,9 @@ function AppContent() {
         <Sidebar />
         <ResizableDivider direction="vertical" onResize={handleSidebarResize} onResizeEnd={handleSidebarResizeEnd} />
         {activeTab && monitorPanelVisible && (
-          <MonitorPanel key={activeTab.sessionId} sessionId={activeTab.sessionId} />
+          <Suspense fallback={null}>
+            <MonitorPanel key={activeTab.sessionId} sessionId={activeTab.sessionId} />
+          </Suspense>
         )}
         <div className="flex flex-col flex-1 overflow-hidden">
           <TabBar />
@@ -317,26 +322,36 @@ function AppContent() {
             {activeTab && bottomPanelVisible && (
               <>
                 <ResizableDivider direction="horizontal" onResize={handleBottomPanelResize} />
-                <BottomPanel
-                  sessionId={activeTab.sessionId}
-                  height={bottomPanelHeight}
-                  onExecute={handleCommandExecute}
-                  onOpenManager={() => setShowSnippets(true)}
-                />
+                <Suspense fallback={null}>
+                  <BottomPanel
+                    sessionId={activeTab.sessionId}
+                    height={bottomPanelHeight}
+                    onExecute={handleCommandExecute}
+                    onOpenManager={() => setShowSnippets(true)}
+                  />
+                </Suspense>
               </>
             )}
           </div>
         </div>
       </div>
       <StatusBar />
-      <ConnectionDialog />
-      <SnippetManager
-        isOpen={showSnippets}
-        onClose={() => setShowSnippets(false)}
-        onExecute={handleSnippetExecute}
-      />
-      <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
-      <ScriptWorkshop isOpen={showScriptWorkshop} onClose={() => setShowScriptWorkshop(false)} sessionId={activeTab?.sessionId} />
+      <Suspense fallback={null}>
+        <ConnectionDialog />
+        {showSnippets && (
+          <SnippetManager
+            isOpen={showSnippets}
+            onClose={() => setShowSnippets(false)}
+            onExecute={handleSnippetExecute}
+          />
+        )}
+        {showSettings && (
+          <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
+        )}
+        {showScriptWorkshop && (
+          <ScriptWorkshop isOpen={showScriptWorkshop} onClose={() => setShowScriptWorkshop(false)} sessionId={activeTab?.sessionId} />
+        )}
+      </Suspense>
 
       {/* Non-blocking connecting indicator */}
       {connecting && (

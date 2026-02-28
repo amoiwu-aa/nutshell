@@ -17,13 +17,28 @@ class WorkspaceErrorBoundary extends Component<{ children: ReactNode }, { error:
     return this.props.children
   }
 }
-import { TerminalPanel } from '../terminal/TerminalPanel'
-import { FileExplorer } from '../sftp/FileExplorer'
-import { FileEditor } from '../sftp/FileEditor'
-import { MonitorDashboard } from '../monitor/MonitorDashboard'
-import { DockerPanel } from '../docker/DockerPanel'
-import { WorkspacePanel } from '../workspace/WorkspacePanel'
+import { Suspense, lazy } from 'react'
+
+const TerminalPanel = lazy(() => import('../terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })))
+const FileExplorer = lazy(() => import('../sftp/FileExplorer').then(m => ({ default: m.FileExplorer })))
+const FileEditor = lazy(() => import('../sftp/FileEditor').then(m => ({ default: m.FileEditor })))
+const MonitorDashboard = lazy(() => import('../monitor/MonitorDashboard').then(m => ({ default: m.MonitorDashboard })))
+const DockerPanel = lazy(() => import('../docker/DockerPanel').then(m => ({ default: m.DockerPanel })))
+const WorkspacePanel = lazy(() => import('../workspace/WorkspacePanel').then(m => ({ default: m.WorkspacePanel })))
+
 import { WelcomeScreen } from './WelcomeScreen'
+
+// Simple loading fallback
+function LoadingFallback({ name }: { name: string }) {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background/50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <span className="text-xs text-muted-foreground">加载 {name}...</span>
+      </div>
+    </div>
+  )
+}
 
 interface EditingFile {
   sessionId: string
@@ -76,31 +91,41 @@ export function ContentArea() {
           className="absolute inset-0 flex flex-col overflow-hidden"
           style={{ display: tab.id === activeTabId ? 'flex' : 'none' }}
         >
-          {tab.type === 'terminal' && (
-            <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} />
-          )}
-          {tab.type === 'sftp' && (
-            <FileExplorer sessionId={tab.sessionId} tabId={tab.id} />
-          )}
-          {tab.type === 'monitor' && (
-            <MonitorDashboard sessionId={tab.sessionId} tabId={tab.id} />
-          )}
-          {tab.type === 'docker' && (
-            <DockerPanel sessionId={tab.sessionId} tabId={tab.id} />
-          )}
-          {tab.type === 'workspace' && tab.workspacePath && (
-            <WorkspaceErrorBoundary>
-              <WorkspacePanel sessionId={tab.sessionId} tabId={tab.id} rootPath={tab.workspacePath} />
-            </WorkspaceErrorBoundary>
-          )}
-          {tab.type === 'editor' && tab.filePath && tab.fileName && (
-            <FileEditor
-              sessionId={tab.sessionId}
-              filePath={tab.filePath}
-              fileName={tab.fileName}
-              onClose={() => removeTab(tab.id)}
-            />
-          )}
+          <Suspense fallback={<LoadingFallback name="终端" />}>
+            {tab.type === 'terminal' && (
+              <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} />
+            )}
+          </Suspense>
+          <Suspense fallback={<LoadingFallback name="文件管理器" />}>
+            {tab.type === 'sftp' && (
+              <FileExplorer sessionId={tab.sessionId} tabId={tab.id} />
+            )}
+            {tab.type === 'editor' && tab.filePath && tab.fileName && (
+              <FileEditor
+                sessionId={tab.sessionId}
+                filePath={tab.filePath}
+                fileName={tab.fileName}
+                onClose={() => removeTab(tab.id)}
+              />
+            )}
+          </Suspense>
+          <Suspense fallback={<LoadingFallback name="监控" />}>
+            {tab.type === 'monitor' && (
+              <MonitorDashboard sessionId={tab.sessionId} tabId={tab.id} />
+            )}
+          </Suspense>
+          <Suspense fallback={<LoadingFallback name="Docker" />}>
+            {tab.type === 'docker' && (
+              <DockerPanel sessionId={tab.sessionId} tabId={tab.id} />
+            )}
+          </Suspense>
+          <Suspense fallback={<LoadingFallback name="工作区" />}>
+            {tab.type === 'workspace' && tab.workspacePath && (
+              <WorkspaceErrorBoundary>
+                <WorkspacePanel sessionId={tab.sessionId} tabId={tab.id} rootPath={tab.workspacePath} />
+              </WorkspaceErrorBoundary>
+            )}
+          </Suspense>
         </div>
       ))}
     </div>
