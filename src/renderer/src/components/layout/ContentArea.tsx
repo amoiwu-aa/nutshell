@@ -47,7 +47,10 @@ interface EditingFile {
 }
 
 export function ContentArea() {
-  const { tabs, activeTabId, addTab, removeTab } = useConnectionStore()
+  const tabs = useConnectionStore((state) => state.tabs)
+  const activeTabId = useConnectionStore((state) => state.activeTabId)
+  const addTab = useConnectionStore((state) => state.addTab)
+  const removeTab = useConnectionStore((state) => state.removeTab)
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
   // file:edit → open as a dedicated editor tab instead of an overlay

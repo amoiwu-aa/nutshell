@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { CanvasAddon } from '@xterm/addon-canvas'
 import { Search, X, ChevronUp, ChevronDown, SplitSquareHorizontal, Columns, Sparkles, Copy, ClipboardPaste, TextSelect, Eraser } from 'lucide-react'
 import { AIAssistant } from './AIAssistant'
 import { cn } from '../../lib/utils'
@@ -84,8 +86,8 @@ function TerminalInstance({
   const [searchText, setSearchText] = useState('')
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [copyToast, setCopyToast] = useState(false)
-  const { settings } = useSettingsStore()
-  const { updateTab } = useConnectionStore()
+  const settings = useSettingsStore(state => state.settings)
+  const updateTab = useConnectionStore(state => state.updateTab)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -119,6 +121,17 @@ function TerminalInstance({
     terminal.loadAddon(searchAddon)
 
     terminal.open(containerRef.current)
+
+    // Enable Hardware Acceleration for rendering performance
+    try {
+      const webglAddon = new WebglAddon()
+      webglAddon.onContextLoss(() => webglAddon.dispose())
+      terminal.loadAddon(webglAddon)
+    } catch {
+      // Fallback to canvas if WebGL is unavailable
+      try { terminal.loadAddon(new CanvasAddon()) } catch { }
+    }
+
     fitAddon.fit()
 
     terminalRef.current = terminal
@@ -191,7 +204,7 @@ function TerminalInstance({
         try {
           const container = containerRef.current
           if (container && container.offsetWidth > 0 && container.offsetHeight > 0) fitAddon.fit()
-        } catch {}
+        } catch { }
       }, 150)
     })
     resizeObserver.observe(containerRef.current)
@@ -223,7 +236,7 @@ function TerminalInstance({
     terminal.options.theme = theme
     terminal.options.fontSize = settings.fontSize
     terminal.options.fontFamily = settings.fontFamily
-    try { fitAddonRef.current?.fit() } catch {}
+    try { fitAddonRef.current?.fit() } catch { }
   }, [settings.terminalTheme, settings.fontSize, settings.fontFamily])
 
   const handleSearch = useCallback(

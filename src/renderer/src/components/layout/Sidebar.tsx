@@ -25,14 +25,13 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { v4 as uuidv4 } from 'uuid'
 
 export function Sidebar() {
-  const {
-    connections,
-    sidebarCollapsed,
-    setSidebarCollapsed,
-    removeConnection,
-    updateConnection
-  } = useConnectionStore()
-  const { settings } = useSettingsStore()
+  const connections = useConnectionStore((state) => state.connections)
+  const sidebarCollapsed = useConnectionStore((state) => state.sidebarCollapsed)
+  const setSidebarCollapsed = useConnectionStore((state) => state.setSidebarCollapsed)
+  const removeConnection = useConnectionStore((state) => state.removeConnection)
+  const updateConnection = useConnectionStore((state) => state.updateConnection)
+
+  const settings = useSettingsStore((state) => state.settings)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['default']))
   const [searchQuery, setSearchQuery] = useState('')
   const [contextMenu, setContextMenu] = useState<{
