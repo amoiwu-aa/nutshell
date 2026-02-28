@@ -22,6 +22,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [actionLoadingMap, setActionLoadingMap] = useState<Record<string, string>>({})
 
   // Log viewer state
   const [logViewer, setLogViewer] = useState<any>(null)
@@ -92,7 +93,12 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   }, [activeView])
 
   const handleContainerAction = async (containerId: string, action: string) => {
-    await window.api.docker.containerAction(sessionId, containerId, action); loadContainers()
+    setActionLoadingMap((p) => ({ ...p, [`container-${containerId}`]: action }))
+    try { await window.api.docker.containerAction(sessionId, containerId, action) }
+    finally {
+      await loadContainers()
+      setActionLoadingMap((p) => { const n = { ...p }; delete n[`container-${containerId}`]; return n })
+    }
   }
   const handleViewLogs = async (containerId: string, name: string) => {
     setLogViewer({ containerId, name, logs: '', loading: true, tail: 500, since: '', until: '', searchText: '', matchCount: 0, matchIndex: 0 })
@@ -165,10 +171,32 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
     setPulling(false); setPullImageName(''); loadImages()
   }
   const handleRemoveImage = async (imageId: string) => {
-    if (confirm('确定删除此镜像？')) { await window.api.docker.removeImage(sessionId, imageId); loadImages() }
+    if (confirm('确定删除此镜像？')) {
+      setActionLoadingMap((p) => ({ ...p, [`image-${imageId}`]: 'remove' }))
+      try { await window.api.docker.removeImage(sessionId, imageId) }
+      finally {
+        await loadImages()
+        setActionLoadingMap((p) => { const n = { ...p }; delete n[`image-${imageId}`]; return n })
+      }
+    }
   }
   const handleRemoveNetwork = async (networkId: string) => {
-    if (confirm('确定删除此网络？')) { await window.api.docker.removeNetwork(sessionId, networkId); loadNetworks() }
+    if (confirm('确定删除此网络？')) {
+      setActionLoadingMap((p) => ({ ...p, [`network-${networkId}`]: 'remove' }))
+      try { await window.api.docker.removeNetwork(sessionId, networkId) }
+      finally {
+        await loadNetworks()
+        setActionLoadingMap((p) => { const n = { ...p }; delete n[`network-${networkId}`]; return n })
+      }
+    }
+  }
+  const handleComposeAction = async (projectName: string, dir: string, action: string) => {
+    setActionLoadingMap((p) => ({ ...p, [`compose-${projectName}`]: action }))
+    try { await window.api.docker.composeAction(sessionId, dir, action) }
+    finally {
+      await loadCompose()
+      setActionLoadingMap((p) => { const n = { ...p }; delete n[`compose-${projectName}`]; return n })
+    }
   }
 
   const stateColor = (state: string) => state === 'running' ? 'text-green-500' : state === 'exited' ? 'text-red-500' : 'text-muted-foreground'
@@ -204,7 +232,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
           {activeView === 'containers' && <button onClick={() => setShowCreateContainer(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90"><Plus className="w-3.5 h-3.5" />创建容器</button>}
           {activeView === 'images' && <button onClick={() => setShowRegistryMirrors(true)} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent" title="镜像源设置"><Settings className="w-4 h-4" /></button>}
           {activeView === 'networks' && <button onClick={() => setShowCreateNetwork(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90"><Plus className="w-3.5 h-3.5" />创建网络</button>}
-          <button onClick={() => { if (activeView==='containers') loadContainers(); else if (activeView==='images') loadImages(); else if (activeView==='networks') loadNetworks(); else loadCompose() }} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent">
+          <button onClick={() => { if (activeView === 'containers') loadContainers(); else if (activeView === 'images') loadImages(); else if (activeView === 'networks') loadNetworks(); else loadCompose() }} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent">
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </button>
         </div>
@@ -237,16 +265,26 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-center gap-1">
                       {c.state === 'running' ? (
-                        <><button onClick={() => handleContainerAction(c.id, 'stop')} className="p-1.5 hover:bg-accent rounded" title="停止"><Square className="w-3.5 h-3.5 text-red-500" /></button>
-                        <button onClick={() => handleContainerAction(c.id, 'restart')} className="p-1.5 hover:bg-accent rounded" title="重启"><RotateCcw className="w-3.5 h-3.5 text-yellow-500" /></button>
-                        <button onClick={() => handleExec(c.id)} className="p-1.5 hover:bg-accent rounded" title="终端"><Terminal className="w-3.5 h-3.5 text-primary" /></button>
-                        <button onClick={() => openFileBrowser(c.id, c.name)} className="p-1.5 hover:bg-accent rounded" title="文件管理"><FolderOpen className="w-3.5 h-3.5 text-yellow-500" /></button></>
+                        <>
+                          <button onClick={() => handleContainerAction(c.id, 'stop')} disabled={!!actionLoadingMap[`container-${c.id}`]} className="p-1.5 hover:bg-accent rounded disabled:opacity-50" title="停止">
+                            {actionLoadingMap[`container-${c.id}`] === 'stop' ? <RefreshCw className="w-3.5 h-3.5 text-red-500 animate-spin" /> : <Square className="w-3.5 h-3.5 text-red-500" />}
+                          </button>
+                          <button onClick={() => handleContainerAction(c.id, 'restart')} disabled={!!actionLoadingMap[`container-${c.id}`]} className="p-1.5 hover:bg-accent rounded disabled:opacity-50" title="重启">
+                            {actionLoadingMap[`container-${c.id}`] === 'restart' ? <RefreshCw className="w-3.5 h-3.5 text-yellow-500 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5 text-yellow-500" />}
+                          </button>
+                          <button onClick={() => handleExec(c.id)} className="p-1.5 hover:bg-accent rounded" title="终端"><Terminal className="w-3.5 h-3.5 text-primary" /></button>
+                          <button onClick={() => openFileBrowser(c.id, c.name)} className="p-1.5 hover:bg-accent rounded" title="文件管理"><FolderOpen className="w-3.5 h-3.5 text-yellow-500" /></button>
+                        </>
                       ) : (
-                        <button onClick={() => handleContainerAction(c.id, 'start')} className="p-1.5 hover:bg-accent rounded" title="启动"><Play className="w-3.5 h-3.5 text-green-500" /></button>
+                        <button onClick={() => handleContainerAction(c.id, 'start')} disabled={!!actionLoadingMap[`container-${c.id}`]} className="p-1.5 hover:bg-accent rounded disabled:opacity-50" title="启动">
+                          {actionLoadingMap[`container-${c.id}`] === 'start' ? <RefreshCw className="w-3.5 h-3.5 text-green-500 animate-spin" /> : <Play className="w-3.5 h-3.5 text-green-500" />}
+                        </button>
                       )}
                       <button onClick={() => handleInspect(c.id)} className="p-1.5 hover:bg-accent rounded" title="详情"><Info className="w-3.5 h-3.5" /></button>
                       <button onClick={() => handleViewLogs(c.id, c.name)} className="p-1.5 hover:bg-accent rounded" title="日志"><FileText className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleContainerAction(c.id, 'remove')} className="p-1.5 hover:bg-accent rounded" title="删除"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
+                      <button onClick={() => handleContainerAction(c.id, 'remove')} disabled={!!actionLoadingMap[`container-${c.id}`]} className="p-1.5 hover:bg-accent rounded disabled:opacity-50" title="删除">
+                        {actionLoadingMap[`container-${c.id}`] === 'remove' ? <RefreshCw className="w-3.5 h-3.5 text-destructive animate-spin" /> : <Trash2 className="w-3.5 h-3.5 text-destructive" />}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -275,7 +313,11 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                     <td className="px-4 py-2.5"><span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-xs">{i.tag}</span></td>
                     <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{i.id.substring(0, 12)}</td>
                     <td className="px-4 py-2.5 text-muted-foreground">{i.size}</td>
-                    <td className="px-4 py-2.5 text-center"><button onClick={() => handleRemoveImage(i.id)} className="p-1.5 hover:bg-accent rounded"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button></td>
+                    <td className="px-4 py-2.5 text-center">
+                      <button onClick={() => handleRemoveImage(i.id)} disabled={!!actionLoadingMap[`image-${i.id}`]} className="p-1.5 hover:bg-accent rounded disabled:opacity-50">
+                        {actionLoadingMap[`image-${i.id}`] === 'remove' ? <RefreshCw className="w-3.5 h-3.5 text-destructive animate-spin" /> : <Trash2 className="w-3.5 h-3.5 text-destructive" />}
+                      </button>
+                    </td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -300,7 +342,9 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                   <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{n.id.substring(0, 12)}</td>
                   <td className="px-4 py-2.5 text-center">
                     {!['bridge', 'host', 'none'].includes(n.name) && (
-                      <button onClick={() => handleRemoveNetwork(n.id)} className="p-1.5 hover:bg-accent rounded"><Trash2 className="w-3.5 h-3.5 text-destructive" /></button>
+                      <button onClick={() => handleRemoveNetwork(n.id)} disabled={!!actionLoadingMap[`network-${n.id}`]} className="p-1.5 hover:bg-accent rounded disabled:opacity-50">
+                        {actionLoadingMap[`network-${n.id}`] === 'remove' ? <RefreshCw className="w-3.5 h-3.5 text-destructive animate-spin" /> : <Trash2 className="w-3.5 h-3.5 text-destructive" />}
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -329,10 +373,18 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                       <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono truncate max-w-[300px]">{p.configFiles}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={async () => { await window.api.docker.composeAction(sessionId, dir, 'up'); loadCompose() }} className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700">启动</button>
-                          <button onClick={async () => { await window.api.docker.composeAction(sessionId, dir, 'down'); loadCompose() }} className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700">停止</button>
-                          <button onClick={async () => { await window.api.docker.composeAction(sessionId, dir, 'restart'); loadCompose() }} className="px-2 py-1 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700">重启</button>
-                          <button onClick={() => openComposeEditor(p.name, p.configFiles)} className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90">编辑</button>
+                          <button onClick={() => handleComposeAction(p.name, dir, 'up')} disabled={!!actionLoadingMap[`compose-${p.name}`]} className="flex items-center justify-center w-12 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                            {actionLoadingMap[`compose-${p.name}`] === 'up' ? <RefreshCw className="w-3 h-3 animate-spin mx-auto" /> : '启动'}
+                          </button>
+                          <button onClick={() => handleComposeAction(p.name, dir, 'down')} disabled={!!actionLoadingMap[`compose-${p.name}`]} className="flex items-center justify-center w-12 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">
+                            {actionLoadingMap[`compose-${p.name}`] === 'down' ? <RefreshCw className="w-3 h-3 animate-spin mx-auto" /> : '停止'}
+                          </button>
+                          <button onClick={() => handleComposeAction(p.name, dir, 'restart')} disabled={!!actionLoadingMap[`compose-${p.name}`]} className="flex items-center justify-center w-12 py-1 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50">
+                            {actionLoadingMap[`compose-${p.name}`] === 'restart' ? <RefreshCw className="w-3 h-3 animate-spin mx-auto" /> : '重启'}
+                          </button>
+                          <button onClick={() => openComposeEditor(p.name, p.configFiles)} className="flex items-center justify-center w-12 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90">
+                            编辑
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -374,10 +426,10 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
               onContextMenu={(e) => { const s = window.getSelection()?.toString(); if (s) { e.preventDefault(); navigator.clipboard.writeText(s) } }}>
               {logViewer.loading ? 'Loading...' : logViewer.searchText
                 ? logViewer.logs.split('\n').map((line: string, i: number) => {
-                    const esc = logViewer.searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-                    const rx = new RegExp(`(${esc})`, 'gi')
-                    return rx.test(line) ? <span key={i}>{line.split(rx).map((p: string, j: number) => rx.test(p) ? <mark key={j} className="bg-yellow-500/40 text-yellow-200">{p}</mark> : p)}{'\n'}</span> : <span key={i}>{line}{'\n'}</span>
-                  })
+                  const esc = logViewer.searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                  const rx = new RegExp(`(${esc})`, 'gi')
+                  return rx.test(line) ? <span key={i}>{line.split(rx).map((p: string, j: number) => rx.test(p) ? <mark key={j} className="bg-yellow-500/40 text-yellow-200">{p}</mark> : p)}{'\n'}</span> : <span key={i}>{line}{'\n'}</span>
+                })
                 : logViewer.logs}
             </pre>
           </div>
@@ -456,24 +508,24 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
               <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, '/')} className="hover:text-primary"><Home className="w-3.5 h-3.5" /></button>
               {fileBrowser.path.split('/').filter(Boolean).map((part: string, i: number, arr: string[]) => (
                 <span key={i} className="flex items-center gap-0.5 text-sm"><ChevronRight className="w-3 h-3 text-muted-foreground" />
-                  <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, '/' + arr.slice(0, i+1).join('/'))} className="hover:text-primary">{part}</button>
+                  <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, '/' + arr.slice(0, i + 1).join('/'))} className="hover:text-primary">{part}</button>
                 </span>
               ))}
               <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, fileBrowser.path)} className="ml-auto p-1 hover:bg-accent rounded"><RefreshCw className={cn('w-3.5 h-3.5', fileBrowser.loading && 'animate-spin')} /></button>
             </div>
             <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[calc(80vh-130px)]">
               {fileBrowser.loading ? <div className="flex items-center justify-center h-full"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-              : fileBrowser.error ? <div className="flex flex-col items-center justify-center h-full p-4"><AlertCircle className="w-6 h-6 text-destructive mb-2" /><p className="text-xs text-destructive">{fileBrowser.error}</p></div>
-              : <table className="w-full text-sm"><thead className="sticky top-0 bg-card text-xs text-muted-foreground"><tr><th className="text-left px-4 py-1.5 font-medium">名称</th><th className="text-right px-4 py-1.5 font-medium w-20">大小</th><th className="text-center px-4 py-1.5 font-medium w-28">权限</th><th className="text-center px-4 py-1.5 font-medium w-16">操作</th></tr></thead>
-                <tbody>{fileBrowser.files.map((f: any) => (
-                  <tr key={f.filename} onDoubleClick={() => f.isDirectory && navigateContainerDir(f.filename)} className="hover:bg-accent/50 cursor-pointer">
-                    <td className="px-4 py-1.5 flex items-center gap-2">{f.isDirectory ? <FolderOpen className="w-4 h-4 text-yellow-500 shrink-0" /> : <FileText className="w-4 h-4 text-muted-foreground shrink-0" />}<span className="truncate">{f.filename}</span></td>
-                    <td className="px-4 py-1.5 text-right text-xs text-muted-foreground">{f.isDirectory ? '-' : f.size}</td>
-                    <td className="px-4 py-1.5 text-center font-mono text-xs text-muted-foreground">{f.permissions}</td>
-                    <td className="px-4 py-1.5 text-center">{!f.isDirectory && <button onClick={() => handleContainerFileDownload(f.filename)} className="p-1 hover:bg-accent rounded"><Download className="w-3.5 h-3.5 text-primary" /></button>}</td>
-                  </tr>
-                ))}{fileBrowser.files.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-xs">空目录</td></tr>}</tbody>
-              </table>}
+                : fileBrowser.error ? <div className="flex flex-col items-center justify-center h-full p-4"><AlertCircle className="w-6 h-6 text-destructive mb-2" /><p className="text-xs text-destructive">{fileBrowser.error}</p></div>
+                  : <table className="w-full text-sm"><thead className="sticky top-0 bg-card text-xs text-muted-foreground"><tr><th className="text-left px-4 py-1.5 font-medium">名称</th><th className="text-right px-4 py-1.5 font-medium w-20">大小</th><th className="text-center px-4 py-1.5 font-medium w-28">权限</th><th className="text-center px-4 py-1.5 font-medium w-16">操作</th></tr></thead>
+                    <tbody>{fileBrowser.files.map((f: any) => (
+                      <tr key={f.filename} onDoubleClick={() => f.isDirectory && navigateContainerDir(f.filename)} className="hover:bg-accent/50 cursor-pointer">
+                        <td className="px-4 py-1.5 flex items-center gap-2">{f.isDirectory ? <FolderOpen className="w-4 h-4 text-yellow-500 shrink-0" /> : <FileText className="w-4 h-4 text-muted-foreground shrink-0" />}<span className="truncate">{f.filename}</span></td>
+                        <td className="px-4 py-1.5 text-right text-xs text-muted-foreground">{f.isDirectory ? '-' : f.size}</td>
+                        <td className="px-4 py-1.5 text-center font-mono text-xs text-muted-foreground">{f.permissions}</td>
+                        <td className="px-4 py-1.5 text-center">{!f.isDirectory && <button onClick={() => handleContainerFileDownload(f.filename)} className="p-1 hover:bg-accent rounded"><Download className="w-3.5 h-3.5 text-primary" /></button>}</td>
+                      </tr>
+                    ))}{fileBrowser.files.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-xs">空目录</td></tr>}</tbody>
+                  </table>}
             </div>
             <div className="px-5 py-2 border-t border-border text-xs text-muted-foreground shrink-0">{fileBrowser.files.length} 个项目 | 容器: {fileBrowser.containerId?.substring(0, 12)}</div>
           </div>
@@ -696,7 +748,7 @@ function ContainerDetailModal({ sessionId, detail, detailTab, setDetailTab, netw
           </div>
         </div>
         <div className="flex border-b border-border shrink-0">
-          {[['info','基本信息'],['network','网络'],['mounts','挂载'],['env','环境变量'],['ports','端口映射']].map(([id,label]) => (
+          {[['info', '基本信息'], ['network', '网络'], ['mounts', '挂载'], ['env', '环境变量'], ['ports', '端口映射']].map(([id, label]) => (
             <button key={id} onClick={() => setDetailTab(id)} className={cn('px-4 py-2 text-xs', detailTab === id ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground')}>{label}</button>
           ))}
         </div>
@@ -704,8 +756,8 @@ function ContainerDetailModal({ sessionId, detail, detailTab, setDetailTab, netw
           {detailTab === 'info' && (
             <div className="space-y-2 text-xs">
               {[['ID', detail.Id], ['镜像', detail.Config?.Image], ['状态', detail.State?.Status], ['启动时间', detail.State?.StartedAt], ['重启策略', detail.HostConfig?.RestartPolicy?.Name], ['平台', detail.Platform], ['驱动', detail.Driver]].map(([k, v]) => (
-                <div key={k as string} className="flex items-center group"><span className="w-24 text-muted-foreground shrink-0">{k}</span><span className="font-mono flex-1">{v||'-'}</span>
-                  <button onClick={() => navigator.clipboard.writeText(String(v||''))} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-accent rounded"><Copy className="w-3 h-3 text-muted-foreground" /></button></div>
+                <div key={k as string} className="flex items-center group"><span className="w-24 text-muted-foreground shrink-0">{k}</span><span className="font-mono flex-1">{v || '-'}</span>
+                  <button onClick={() => navigator.clipboard.writeText(String(v || ''))} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-accent rounded"><Copy className="w-3 h-3 text-muted-foreground" /></button></div>
               ))}
             </div>
           )}
@@ -718,8 +770,8 @@ function ContainerDetailModal({ sessionId, detail, detailTab, setDetailTab, netw
                   </div>
                   <div className="grid grid-cols-2 gap-1.5 text-muted-foreground">
                     {[['IP', net.IPAddress], ['网关', net.Gateway], ['MAC', net.MacAddress], ['网络ID', net.NetworkID?.substring(0, 12)]].map(([l, v]) => (
-                      <div key={l as string} className="flex items-center gap-1 group"><span>{l}: </span><span className="font-mono text-foreground">{v||'-'}</span>
-                        <button onClick={() => navigator.clipboard.writeText(String(v||''))} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-accent rounded"><Copy className="w-2.5 h-2.5" /></button></div>
+                      <div key={l as string} className="flex items-center gap-1 group"><span>{l}: </span><span className="font-mono text-foreground">{v || '-'}</span>
+                        <button onClick={() => navigator.clipboard.writeText(String(v || ''))} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-accent rounded"><Copy className="w-2.5 h-2.5" /></button></div>
                     ))}
                   </div>
                 </div>
@@ -740,23 +792,25 @@ function ContainerDetailModal({ sessionId, detail, detailTab, setDetailTab, netw
           )}
           {detailTab === 'mounts' && (
             <table className="w-full text-xs"><thead className="text-muted-foreground"><tr><th className="text-left py-1">类型</th><th className="text-left py-1">源</th><th className="text-left py-1">目标</th><th className="text-left py-1">读写</th></tr></thead>
-              <tbody>{(detail.Mounts||[]).length === 0 ? <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">无挂载</td></tr> : (detail.Mounts||[]).map((m: any, i: number) => (
+              <tbody>{(detail.Mounts || []).length === 0 ? <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">无挂载</td></tr> : (detail.Mounts || []).map((m: any, i: number) => (
                 <tr key={i} className="border-t border-border/50"><td className="py-1.5">{m.Type}</td><td className="py-1.5 font-mono text-muted-foreground break-all">{m.Source}</td><td className="py-1.5 font-mono">{m.Destination}</td><td className="py-1.5">{m.RW ? '读写' : '只读'}</td></tr>
               ))}</tbody>
             </table>
           )}
           {detailTab === 'env' && (
             <table className="w-full text-xs"><thead className="text-muted-foreground"><tr><th className="text-left py-1">变量</th><th className="text-left py-1">值</th><th className="w-8"></th></tr></thead>
-              <tbody>{(detail.Config?.Env||[]).map((e: string, i: number) => { const [k,...v]=e.split('='); return (
-                <tr key={i} className="border-t border-border/50 group"><td className="py-1.5 font-mono font-medium">{k}</td><td className="py-1.5 font-mono text-muted-foreground break-all">{v.join('=')}</td>
-                  <td><button onClick={() => navigator.clipboard.writeText(e)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-accent rounded"><Copy className="w-3 h-3" /></button></td></tr>
-              )})}</tbody>
+              <tbody>{(detail.Config?.Env || []).map((e: string, i: number) => {
+                const [k, ...v] = e.split('='); return (
+                  <tr key={i} className="border-t border-border/50 group"><td className="py-1.5 font-mono font-medium">{k}</td><td className="py-1.5 font-mono text-muted-foreground break-all">{v.join('=')}</td>
+                    <td><button onClick={() => navigator.clipboard.writeText(e)} className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-accent rounded"><Copy className="w-3 h-3" /></button></td></tr>
+                )
+              })}</tbody>
             </table>
           )}
           {detailTab === 'ports' && (
             <table className="w-full text-xs"><thead className="text-muted-foreground"><tr><th className="text-left py-1">容器端口</th><th className="text-left py-1">主机地址</th><th className="text-left py-1">主机端口</th></tr></thead>
-              <tbody>{Object.entries(detail.NetworkSettings?.Ports||{}).map(([cp, bs]: [string, any]) => (bs||[{HostIp:'-',HostPort:'-'}]).map((b: any, i: number) => (
-                <tr key={`${cp}-${i}`} className="border-t border-border/50"><td className="py-1.5 font-mono">{cp}</td><td className="py-1.5 font-mono">{b.HostIp||'0.0.0.0'}</td><td className="py-1.5 font-mono font-medium">{b.HostPort||'-'}</td></tr>
+              <tbody>{Object.entries(detail.NetworkSettings?.Ports || {}).map(([cp, bs]: [string, any]) => (bs || [{ HostIp: '-', HostPort: '-' }]).map((b: any, i: number) => (
+                <tr key={`${cp}-${i}`} className="border-t border-border/50"><td className="py-1.5 font-mono">{cp}</td><td className="py-1.5 font-mono">{b.HostIp || '0.0.0.0'}</td><td className="py-1.5 font-mono font-medium">{b.HostPort || '-'}</td></tr>
               )))}</tbody>
             </table>
           )}

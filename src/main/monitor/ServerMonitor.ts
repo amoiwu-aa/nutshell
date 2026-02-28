@@ -159,8 +159,8 @@ class ServerMonitor {
     cmdMap.push('uptime')
 
     if (mod.memory || mod.swap) {
-      commands.push(`free -b`)
-      cmdMap.push('free')
+      commands.push(`cat /proc/meminfo 2>/dev/null || free -b 2>/dev/null || free 2>/dev/null`)
+      cmdMap.push('memory')
     }
 
     if (mod.disks) {
@@ -221,18 +221,41 @@ class ServerMonitor {
     // --- Memory + Swap ---
     let memUsed = 0, memTotal = 0, memPercent = 0
     let swapUsed = 0, swapTotal = 0, swapPercent = 0
-    const freeOutput = getPart('free')
-    if (freeOutput) {
-      for (const line of freeOutput.split('\n')) {
-        const cols = line.split(/\s+/)
-        if (/mem/i.test(cols[0])) {
-          memTotal = parseInt(cols[1]) || 0
-          memUsed = parseInt(cols[2]) || 0
-          memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0
-        } else if (/swap/i.test(cols[0])) {
-          swapTotal = parseInt(cols[1]) || 0
-          swapUsed = parseInt(cols[2]) || 0
-          swapPercent = swapTotal > 0 ? Math.round((swapUsed / swapTotal) * 100) : 0
+    const memOutput = getPart('memory')
+    if (memOutput) {
+      if (memOutput.includes('MemTotal:')) {
+        let memFree = 0, memAvailable = 0, buffers = 0, cached = 0, swapFree = 0
+        for (const line of memOutput.split('\n')) {
+          const [key, valStr] = line.split(':').map(s => s.trim())
+          if (!valStr) continue
+          const val = parseInt(valStr) * 1024
+          const k = key.toLowerCase()
+          if (k === 'memtotal') memTotal = val
+          else if (k === 'memfree') memFree = val
+          else if (k === 'memavailable') memAvailable = val
+          else if (k === 'buffers') buffers = val
+          else if (k === 'cached') cached = val
+          else if (k === 'swaptotal') swapTotal = val
+          else if (k === 'swapfree') swapFree = val
+        }
+        memUsed = memAvailable > 0 ? memTotal - memAvailable : Math.max(0, memTotal - memFree - buffers - cached)
+        memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0
+        swapUsed = Math.max(0, swapTotal - swapFree)
+        swapPercent = swapTotal > 0 ? Math.round((swapUsed / swapTotal) * 100) : 0
+      } else {
+        const isBytes = memOutput.includes('-b') || memOutput.includes('bytes')
+        const mult = isBytes ? 1 : 1024
+        for (const line of memOutput.split('\n')) {
+          const cols = line.split(/\s+/)
+          if (/^mem:?/i.test(cols[0])) {
+            memTotal = (parseInt(cols[1]) || 0) * mult
+            memUsed = (parseInt(cols[2]) || 0) * mult
+            memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0
+          } else if (/^swap:?/i.test(cols[0])) {
+            swapTotal = (parseInt(cols[1]) || 0) * mult
+            swapUsed = (parseInt(cols[2]) || 0) * mult
+            swapPercent = swapTotal > 0 ? Math.round((swapUsed / swapTotal) * 100) : 0
+          }
         }
       }
     }
