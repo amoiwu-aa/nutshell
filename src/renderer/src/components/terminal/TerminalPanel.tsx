@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { CanvasAddon } from '@xterm/addon-canvas'
 import { Search, X, ChevronUp, ChevronDown, SplitSquareHorizontal, Columns, Sparkles, Copy, ClipboardPaste, TextSelect, Eraser } from 'lucide-react'
 import { AIAssistant } from './AIAssistant'
 import { cn } from '../../lib/utils'
@@ -99,7 +101,6 @@ function TerminalInstance({
       cursorBlink: true,
       cursorStyle: 'bar',
       scrollback: 10000,
-      allowTransparency: true,
       convertEol: true,
       macOptionIsMeta: true,
       rightClickSelectsWord: true
@@ -203,7 +204,18 @@ function TerminalInstance({
 
     setTimeout(() => {
       if (containerRef.current && containerRef.current.offsetWidth > 0) {
-        fitAddon.fit(); const { cols, rows } = terminal; lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows)
+        fitAddon.fit()
+
+        // Safely enable Hardware Acceleration ONLY after terminal is fitted into DOM
+        try {
+          const webglAddon = new WebglAddon()
+          webglAddon.onContextLoss(() => webglAddon.dispose())
+          terminal.loadAddon(webglAddon)
+        } catch {
+          try { terminal.loadAddon(new CanvasAddon()) } catch { }
+        }
+
+        const { cols, rows } = terminal; lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows)
       }
     }, 150)
 
