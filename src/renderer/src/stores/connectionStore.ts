@@ -21,8 +21,10 @@ export interface Tab {
   connectionId: string
   sessionId: string
   name: string
-  type: 'terminal' | 'sftp' | 'monitor' | 'docker' | 'workspace'
+  type: 'terminal' | 'sftp' | 'monitor' | 'docker' | 'workspace' | 'editor'
   workspacePath?: string
+  filePath?: string
+  fileName?: string
   connected: boolean
 }
 
@@ -34,7 +36,7 @@ interface ConnectionState {
   monitorPanelVisible: boolean
   bottomPanelVisible: boolean
   bottomPanelHeight: number
-  bottomPanelActiveTab: 'files' | 'commands' | 'transfers'
+  bottomPanelActiveTab: 'files' | 'commands' | 'transfers' | 'ports'
 
   // Actions
   setConnections: (connections: ConnectionConfig[]) => void
@@ -51,7 +53,7 @@ interface ConnectionState {
   setMonitorPanelVisible: (visible: boolean) => void
   setBottomPanelVisible: (visible: boolean) => void
   setBottomPanelHeight: (height: number) => void
-  setBottomPanelActiveTab: (tab: 'files' | 'commands' | 'transfers') => void
+  setBottomPanelActiveTab: (tab: 'files' | 'commands' | 'transfers' | 'ports') => void
 }
 
 export const useConnectionStore = create<ConnectionState>((set) => ({

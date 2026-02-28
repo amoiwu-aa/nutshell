@@ -1,5 +1,6 @@
-import { useState, useEffect, Component, type ReactNode } from 'react'
+import { useEffect, Component, type ReactNode } from 'react'
 import { useConnectionStore } from '../../stores/connectionStore'
+import { v4 as uuidv4 } from 'uuid'
 
 // Error boundary for workspace panel
 class WorkspaceErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -7,10 +8,10 @@ class WorkspaceErrorBoundary extends Component<{ children: ReactNode }, { error:
   static getDerivedStateFromError(error: Error) { return { error } }
   render() {
     if (this.state.error) return (
-      <div style={{padding:20,color:'#f14c4c',background:'#1e1e1e',height:'100%',fontFamily:'monospace',fontSize:14}}>
+      <div style={{ padding: 20, color: '#f14c4c', background: '#1e1e1e', height: '100%', fontFamily: 'monospace', fontSize: 14 }}>
         <h2>工作区加载失败</h2>
-        <pre style={{whiteSpace:'pre-wrap',color:'#cccccc',marginTop:10}}>{this.state.error.message}</pre>
-        <pre style={{whiteSpace:'pre-wrap',color:'#6e7681',marginTop:10,fontSize:12}}>{this.state.error.stack}</pre>
+        <pre style={{ whiteSpace: 'pre-wrap', color: '#cccccc', marginTop: 10 }}>{this.state.error.message}</pre>
+        <pre style={{ whiteSpace: 'pre-wrap', color: '#6e7681', marginTop: 10, fontSize: 12 }}>{this.state.error.stack}</pre>
       </div>
     )
     return this.props.children
@@ -31,47 +32,49 @@ interface EditingFile {
 }
 
 export function ContentArea() {
-  const { tabs, activeTabId } = useConnectionStore()
+  const { tabs, activeTabId, addTab, removeTab } = useConnectionStore()
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const [editingFile, setEditingFile] = useState<EditingFile | null>(null)
 
+  // file:edit → open as a dedicated editor tab instead of an overlay
   useEffect(() => {
     const handleFileEdit = (e: CustomEvent<EditingFile>) => {
-      setEditingFile(e.detail)
+      const { sessionId, path, filename } = e.detail
+      // Re-activate existing editor tab for the same file if already open
+      const store = useConnectionStore.getState()
+      const existing = store.tabs.find(
+        (t) => t.type === 'editor' && t.filePath === path && t.sessionId === sessionId
+      )
+      if (existing) {
+        store.setActiveTab(existing.id)
+        return
+      }
+      addTab({
+        id: uuidv4(),
+        connectionId: '',
+        sessionId,
+        name: filename,
+        type: 'editor',
+        filePath: path,
+        fileName: filename,
+        connected: true
+      })
     }
 
     window.addEventListener('file:edit', handleFileEdit as EventListener)
-    return () => {
-      window.removeEventListener('file:edit', handleFileEdit as EventListener)
-    }
-  }, [])
+    return () => window.removeEventListener('file:edit', handleFileEdit as EventListener)
+  }, [addTab])
 
-  if (!activeTab && !editingFile) {
+  if (!activeTab) {
     return <WelcomeScreen />
   }
 
-  // FIXED: Render tabs AND editor as siblings using display toggle,
-  // instead of conditionally unmounting tabs (which destroyed terminal history)
   return (
     <div className="flex-1 min-h-0 overflow-hidden relative">
-      {/* File editor overlay - shown on top when editing */}
-      {editingFile && (
-        <div className="absolute inset-0 z-10">
-          <FileEditor
-            sessionId={editingFile.sessionId}
-            filePath={editingFile.path}
-            fileName={editingFile.filename}
-            onClose={() => setEditingFile(null)}
-          />
-        </div>
-      )}
-
-      {/* Tabs - always rendered, hidden behind editor when editing */}
       {tabs.map((tab) => (
         <div
           key={tab.id}
-          className="absolute inset-0"
-          style={{ display: !editingFile && tab.id === activeTabId ? 'flex' : 'none' }}
+          className="absolute inset-0 flex flex-col overflow-hidden"
+          style={{ display: tab.id === activeTabId ? 'flex' : 'none' }}
         >
           {tab.type === 'terminal' && (
             <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} />
@@ -89,6 +92,14 @@ export function ContentArea() {
             <WorkspaceErrorBoundary>
               <WorkspacePanel sessionId={tab.sessionId} tabId={tab.id} rootPath={tab.workspacePath} />
             </WorkspaceErrorBoundary>
+          )}
+          {tab.type === 'editor' && tab.filePath && tab.fileName && (
+            <FileEditor
+              sessionId={tab.sessionId}
+              filePath={tab.filePath}
+              fileName={tab.fileName}
+              onClose={() => removeTab(tab.id)}
+            />
           )}
         </div>
       ))}

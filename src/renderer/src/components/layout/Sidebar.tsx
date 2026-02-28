@@ -14,11 +14,15 @@ import {
   Trash2,
   Edit,
   MoreVertical,
-  Sparkles
+  Sparkles,
+  Container,
+  ArrowRightLeft,
+  Terminal
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useConnectionStore, type ConnectionConfig } from '../../stores/connectionStore'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { v4 as uuidv4 } from 'uuid'
 
 export function Sidebar() {
   const {
@@ -58,17 +62,17 @@ export function Sidebar() {
   // Filter connections (memoized)
   const filteredGroups = useMemo(() => searchQuery
     ? Object.fromEntries(
-        Object.entries(groups)
-          .map(([group, conns]) => [
-            group,
-            conns.filter(
-              (c) =>
-                c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                c.host.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-          ])
-          .filter(([, conns]) => (conns as ConnectionConfig[]).length > 0)
-      )
+      Object.entries(groups)
+        .map(([group, conns]) => [
+          group,
+          conns.filter(
+            (c) =>
+              c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              c.host.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        ])
+        .filter(([, conns]) => (conns as ConnectionConfig[]).length > 0)
+    )
     : groups, [groups, searchQuery])
 
   const toggleGroup = (group: string) => {
@@ -100,6 +104,40 @@ export function Sidebar() {
     await window.api.config.deleteConnection(id)
     removeConnection(id)
     setContextMenu(null)
+  }
+
+  // Open a panel tab for a connection — reuses existing session if already connected
+  const openPanelForConnection = (
+    conn: ConnectionConfig,
+    type: 'sftp' | 'monitor' | 'docker' | 'workspace' | 'portforward'
+  ) => {
+    setContextMenu(null)
+    const store = useConnectionStore.getState()
+    // Find an existing terminal session for this connection
+    const existingTab = store.tabs.find(
+      (t) => t.connectionId === conn.id && t.type === 'terminal' && t.connected
+    )
+    if (!existingTab) {
+      // Trigger a regular connection first, then signal which panel to open after
+      window.dispatchEvent(new CustomEvent('connection:open', { detail: conn }))
+      return
+    }
+    if (type === 'portforward') {
+      store.setBottomPanelVisible(true)
+      store.setBottomPanelActiveTab('ports')
+      return
+    }
+    const labelMap: Record<string, string> = {
+      sftp: '文件管理', monitor: '监控', docker: 'Docker', workspace: '开发'
+    }
+    useConnectionStore.getState().addTab({
+      id: uuidv4(),
+      connectionId: conn.id,
+      sessionId: existingTab.sessionId,
+      name: `${conn.name} - ${labelMap[type]}`,
+      type: type as any,
+      connected: true
+    })
   }
 
   const handleContextMenu = (e: React.MouseEvent, connection: ConnectionConfig) => {
@@ -356,37 +394,85 @@ export function Sidebar() {
         <>
           <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} onKeyDown={(e) => e.key === 'Escape' && setContextMenu(null)} />
           <div
-            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] context-menu"
+            className="fixed z-50 bg-popover text-popover-foreground border border-border rounded-md shadow-lg py-1 min-w-[180px] context-menu select-none"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             role="menu"
             aria-label="连接操作菜单"
           >
+            {/* — 连接 — */}
             <button
               role="menuitem"
               onClick={() => {
                 handleConnect(contextMenu.connection)
                 setContextMenu(null)
               }}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             >
-              <Server className="w-3.5 h-3.5" />
-              连接
+              <Terminal className="w-3.5 h-3.5 shrink-0" />
+              连接终端
+            </button>
+
+            <div className="border-t border-border/50 my-1" role="separator" />
+
+            {/* — 功能面板 — */}
+            <button
+              role="menuitem"
+              onClick={() => openPanelForConnection(contextMenu.connection, 'sftp')}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+              打开文件管理
             </button>
             <button
               role="menuitem"
-              onClick={() => handleEditConnection(contextMenu.connection)}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+              onClick={() => openPanelForConnection(contextMenu.connection, 'monitor')}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             >
-              <Edit className="w-3.5 h-3.5" />
+              <Activity className="w-3.5 h-3.5 shrink-0" />
+              服务器监控
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => openPanelForConnection(contextMenu.connection, 'docker')}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <Container className="w-3.5 h-3.5 shrink-0" />
+              Docker 管理
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => openPanelForConnection(contextMenu.connection, 'workspace')}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <Code2 className="w-3.5 h-3.5 shrink-0" />
+              开发工作区
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => openPanelForConnection(contextMenu.connection, 'portforward')}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+              端口转发
+            </button>
+
+            <div className="border-t border-border my-1" role="separator" />
+
+            {/* — 管理 — */}
+            <button
+              role="menuitem"
+              onClick={() => handleEditConnection(contextMenu.connection)}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <Edit className="w-3.5 h-3.5 shrink-0" />
               编辑
             </button>
-            <div className="border-t border-border my-1" role="separator" />
             <button
               role="menuitem"
               onClick={() => handleDeleteConnection(contextMenu.connection.id)}
               className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
             >
-              <Trash2 className="w-3.5 h-3.5" />
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
               删除
             </button>
           </div>

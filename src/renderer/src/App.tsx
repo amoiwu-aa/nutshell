@@ -9,7 +9,6 @@ import { SnippetManager } from './components/snippet/SnippetManager'
 import { MonitorPanel } from './components/monitor/MonitorPanel'
 import { BottomPanel } from './components/layout/BottomPanel'
 import { ResizableDivider } from './components/layout/ResizableDivider'
-import { PortForwardPanel } from './components/portforward/PortForwardPanel'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { ScriptWorkshop } from './components/ai/ScriptWorkshop'
 import { ToastProvider, useToast } from './components/ui/Toast'
@@ -24,13 +23,28 @@ function AppContent() {
     monitorPanelVisible, bottomPanelVisible, bottomPanelHeight,
     setBottomPanelHeight
   } = useConnectionStore()
-  const { loadSettings } = useSettingsStore()
+  const { loadSettings, setSettings, setSettingsMemOnly } = useSettingsStore()
   const { toast } = useToast()
   const [showSnippets, setShowSnippets] = useState(false)
-  const [showPortForward, setShowPortForward] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showScriptWorkshop, setShowScriptWorkshop] = useState(false)
   const [connecting, setConnecting] = useState(false)
+
+  const handleSidebarResize = useCallback(
+    (delta: number) => {
+      const current = useSettingsStore.getState().settings.sidebarWidth
+      const newWidth = Math.max(160, Math.min(480, current + delta))
+      // Memory-only update during drag — no IPC overhead, no stutter
+      setSettingsMemOnly({ sidebarWidth: newWidth })
+    },
+    [setSettingsMemOnly]
+  )
+
+  const handleSidebarResizeEnd = useCallback(() => {
+    // Persist to disk only once when drag ends
+    const finalWidth = useSettingsStore.getState().settings.sidebarWidth
+    setSettings({ sidebarWidth: finalWidth })
+  }, [setSettings])
 
   // Prevent Electron default drag-drop navigation
   useEffect(() => {
@@ -189,7 +203,10 @@ function AppContent() {
     }
 
     const handleOpenSnippets = () => setShowSnippets(true)
-    const handleOpenPortForward = () => setShowPortForward(true)
+    const handleOpenPortForward = () => {
+      useConnectionStore.getState().setBottomPanelVisible(true)
+      useConnectionStore.getState().setBottomPanelActiveTab('ports')
+    }
     const handleOpenSettings = () => setShowSettings(true)
     const handleOpenScriptWorkshop = () => setShowScriptWorkshop(true)
     const handleToggleBottomPanel = () => {
@@ -289,6 +306,7 @@ function AppContent() {
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
+        <ResizableDivider direction="vertical" onResize={handleSidebarResize} onResizeEnd={handleSidebarResizeEnd} />
         {activeTab && monitorPanelVisible && (
           <MonitorPanel key={activeTab.sessionId} sessionId={activeTab.sessionId} />
         )}
@@ -317,13 +335,6 @@ function AppContent() {
         onClose={() => setShowSnippets(false)}
         onExecute={handleSnippetExecute}
       />
-      {activeTab && (
-        <PortForwardPanel
-          isOpen={showPortForward}
-          onClose={() => setShowPortForward(false)}
-          sessionId={activeTab.sessionId}
-        />
-      )}
       <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
       <ScriptWorkshop isOpen={showScriptWorkshop} onClose={() => setShowScriptWorkshop(false)} sessionId={activeTab?.sessionId} />
 

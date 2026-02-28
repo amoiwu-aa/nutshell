@@ -37,6 +37,9 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, file: null })
   const [renameDialog, setRenameDialog] = useState<{ file: FileInfo; newName: string } | null>(null)
   const [mkdirDialog, setMkdirDialog] = useState<{ name: string } | null>(null)
+  const [editingPath, setEditingPath] = useState(false)
+  const [pathInput, setPathInput] = useState('')
+  const pathInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
 
   useEffect(() => {
@@ -280,23 +283,53 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
           <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
         </button>
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-0.5 text-xs overflow-x-auto ml-1 flex-1">
-          <button onClick={() => loadFiles('/')} className="hover:text-primary transition-colors shrink-0">
-            <Home className="w-3.5 h-3.5" />
-          </button>
-          {parts.map((part, i) => (
-            <span key={i} className="flex items-center gap-0.5 shrink-0">
-              <ChevronRight className="w-3 h-3 text-muted-foreground" />
-              <button
-                onClick={() => loadFiles('/' + parts.slice(0, i + 1).join('/'))}
-                className="hover:text-primary transition-colors"
-              >
-                {part}
-              </button>
-            </span>
-          ))}
-        </div>
+        {/* Breadcrumb / Editable path */}
+        {editingPath ? (
+          <input
+            ref={pathInputRef}
+            type="text"
+            value={pathInput}
+            onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const target = pathInput.trim() || '/'
+                setEditingPath(false)
+                loadFiles(target)
+              } else if (e.key === 'Escape') {
+                setEditingPath(false)
+              }
+            }}
+            onBlur={() => setEditingPath(false)}
+            className="flex-1 ml-1 px-1.5 py-0.5 bg-background border border-input rounded text-xs outline-none focus:ring-1 focus:ring-ring font-mono"
+          />
+        ) : (
+          <div
+            className="flex items-center gap-0.5 text-xs overflow-x-auto ml-1 flex-1 cursor-text rounded px-1 py-0.5 hover:bg-accent/30 transition-colors"
+            onClick={() => {
+              setPathInput(remotePath)
+              setEditingPath(true)
+              setTimeout(() => {
+                pathInputRef.current?.focus()
+                pathInputRef.current?.select()
+              }, 0)
+            }}
+          >
+            <button onClick={(e) => { e.stopPropagation(); loadFiles('/') }} className="hover:text-primary transition-colors shrink-0">
+              <Home className="w-3.5 h-3.5" />
+            </button>
+            {parts.map((part, i) => (
+              <span key={i} className="flex items-center gap-0.5 shrink-0">
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); loadFiles('/' + parts.slice(0, i + 1).join('/')) }}
+                  className="hover:text-primary transition-colors"
+                >
+                  {part}
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* File list */}

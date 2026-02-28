@@ -9,7 +9,9 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:jiaopucun.com)",
       "WebFetch(domain:www.electronjs.org)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:code.visualstudio.com)",
+      "Bash(npm run build:win:*)"
     ]
   }
 }

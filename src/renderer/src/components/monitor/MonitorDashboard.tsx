@@ -243,7 +243,7 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
   }
 
   return (
-    <div className="flex flex-col w-full p-3 gap-3" style={{ minHeight: '100%', overflow: 'auto' }}>
+    <div className="w-full h-full p-3 space-y-3 overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2"><Monitor className="w-4 h-4 text-primary" /><h2 className="text-sm font-semibold">服务器监控</h2></div>
@@ -355,8 +355,8 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
             <ResponsiveContainer width="100%" height={120}>
               <AreaChart data={chartData}>
                 <defs><linearGradient id="cpuG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} /><stop offset="95%" stopColor="#3b82f6" stopOpacity={0} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="time" hide /><YAxis domain={[0,100]} tick={{fontSize:11,fill:'hsl(var(--muted-foreground))'}} />
-                <Tooltip contentStyle={{backgroundColor:'hsl(var(--card))',border:'1px solid hsl(var(--border))',borderRadius:'8px',fontSize:'12px'}} formatter={(v:number)=>[`${v}%`,'CPU']} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="time" hide /><YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} formatter={(v: number) => [`${v}%`, 'CPU']} />
                 <Area type="monotone" dataKey="cpu" stroke="#3b82f6" fill="url(#cpuG)" strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
@@ -368,8 +368,8 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
             <ResponsiveContainer width="100%" height={120}>
               <AreaChart data={chartData}>
                 <defs><linearGradient id="memG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="time" hide /><YAxis domain={[0,100]} tick={{fontSize:11,fill:'hsl(var(--muted-foreground))'}} />
-                <Tooltip contentStyle={{backgroundColor:'hsl(var(--card))',border:'1px solid hsl(var(--border))',borderRadius:'8px',fontSize:'12px'}} formatter={(v:number)=>[`${v}%`,'内存']} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="time" hide /><YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} formatter={(v: number) => [`${v}%`, '内存']} />
                 <Area type="monotone" dataKey="memory" stroke="#10b981" fill="url(#memG)" strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
@@ -406,8 +406,8 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="time" hide />
-                <YAxis tick={{fontSize:11,fill:'hsl(var(--muted-foreground))'}} tickFormatter={(v)=>formatBytes(v)} width={50} />
-                <Tooltip contentStyle={{backgroundColor:'hsl(var(--card))',border:'1px solid hsl(var(--border))',borderRadius:'8px',fontSize:'12px'}} formatter={(v:number,n:string)=>[formatBytesPerSec(v),n==='networkRx'?'↓接收':'↑发送']} />
+                <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} tickFormatter={(v) => formatBytes(v)} width={50} />
+                <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }} formatter={(v: number, n: string) => [formatBytesPerSec(v), n === 'networkRx' ? '↓接收' : '↑发送']} />
                 <Line type="monotone" dataKey="networkRx" stroke="#3b82f6" strokeWidth={2} dot={false} isAnimationActive={false} />
                 <Line type="monotone" dataKey="networkTx" stroke="#f59e0b" strokeWidth={2} dot={false} isAnimationActive={false} />
               </LineChart>
@@ -529,11 +529,11 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-card text-muted-foreground">
                     <tr>
-                      <SortHeader label="协议" sortKey="protocol" active={portSort.key==='protocol'} dir={portSort.dir} onClick={()=>togglePortSort('protocol')} className="text-left" />
+                      <SortHeader label="协议" sortKey="protocol" active={portSort.key === 'protocol'} dir={portSort.dir} onClick={() => togglePortSort('protocol')} className="text-left" />
                       <th className="text-left px-3 py-2 font-medium">地址</th>
-                      <SortHeader label="端口" sortKey="port" active={portSort.key==='port'} dir={portSort.dir} onClick={()=>togglePortSort('port')} className="text-right" />
-                      <SortHeader label="PID" sortKey="pid" active={portSort.key==='pid'} dir={portSort.dir} onClick={()=>togglePortSort('pid')} className="text-right" />
-                      <SortHeader label="进程" sortKey="process" active={portSort.key==='process'} dir={portSort.dir} onClick={()=>togglePortSort('process')} className="text-left" />
+                      <SortHeader label="端口" sortKey="port" active={portSort.key === 'port'} dir={portSort.dir} onClick={() => togglePortSort('port')} className="text-right" />
+                      <SortHeader label="PID" sortKey="pid" active={portSort.key === 'pid'} dir={portSort.dir} onClick={() => togglePortSort('pid')} className="text-right" />
+                      <SortHeader label="进程" sortKey="process" active={portSort.key === 'process'} dir={portSort.dir} onClick={() => togglePortSort('process')} className="text-left" />
                     </tr>
                   </thead>
                   <tbody>
@@ -580,15 +580,15 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-card text-xs text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2 w-8"><button onClick={() => { if (selectedPids.size === processes.length) setSelectedPids(new Set()); else setSelectedPids(new Set(processes.map(p=>p.pid))) }} className="p-0.5 hover:bg-accent rounded">
+                    <th className="px-3 py-2 w-8"><button onClick={() => { if (selectedPids.size === processes.length) setSelectedPids(new Set()); else setSelectedPids(new Set(processes.map(p => p.pid))) }} className="p-0.5 hover:bg-accent rounded">
                       {selectedPids.size === processes.length && processes.length > 0 ? <CheckSquare className="w-3.5 h-3.5 text-primary" /> : <Square className="w-3.5 h-3.5" />}
                     </button></th>
-                    <SortHeader label="PID" sortKey="pid" active={processSort.key==='pid'} dir={processSort.dir} onClick={()=>toggleProcessSort('pid')} className="text-left" />
-                    <SortHeader label="用户" sortKey="user" active={processSort.key==='user'} dir={processSort.dir} onClick={()=>toggleProcessSort('user')} className="text-left" />
-                    <SortHeader label="CPU%" sortKey="cpu" active={processSort.key==='cpu'} dir={processSort.dir} onClick={()=>toggleProcessSort('cpu')} className="text-right" />
-                    <SortHeader label="内存%" sortKey="mem" active={processSort.key==='mem'} dir={processSort.dir} onClick={()=>toggleProcessSort('mem')} className="text-right" />
-                    <SortHeader label="RSS" sortKey="rss" active={processSort.key==='rss'} dir={processSort.dir} onClick={()=>toggleProcessSort('rss')} className="text-right" />
-                    <SortHeader label="命令" sortKey="command" active={processSort.key==='command'} dir={processSort.dir} onClick={()=>toggleProcessSort('command')} className="text-left" />
+                    <SortHeader label="PID" sortKey="pid" active={processSort.key === 'pid'} dir={processSort.dir} onClick={() => toggleProcessSort('pid')} className="text-left" />
+                    <SortHeader label="用户" sortKey="user" active={processSort.key === 'user'} dir={processSort.dir} onClick={() => toggleProcessSort('user')} className="text-left" />
+                    <SortHeader label="CPU%" sortKey="cpu" active={processSort.key === 'cpu'} dir={processSort.dir} onClick={() => toggleProcessSort('cpu')} className="text-right" />
+                    <SortHeader label="内存%" sortKey="mem" active={processSort.key === 'mem'} dir={processSort.dir} onClick={() => toggleProcessSort('mem')} className="text-right" />
+                    <SortHeader label="RSS" sortKey="rss" active={processSort.key === 'rss'} dir={processSort.dir} onClick={() => toggleProcessSort('rss')} className="text-right" />
+                    <SortHeader label="命令" sortKey="command" active={processSort.key === 'command'} dir={processSort.dir} onClick={() => toggleProcessSort('command')} className="text-left" />
                     <th className="text-center px-3 py-2 font-medium w-20">操作</th>
                   </tr>
                 </thead>
@@ -600,7 +600,7 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
                       </button></td>
                       <td className="px-3 py-1.5 font-mono">{proc.pid}</td>
                       <td className="px-3 py-1.5">{proc.user}</td>
-                      <td className="px-3 py-1.5 text-right"><span className={cn(proc.cpu>50&&'text-yellow-500',proc.cpu>80&&'text-destructive')}>{proc.cpu.toFixed(1)}</span></td>
+                      <td className="px-3 py-1.5 text-right"><span className={cn(proc.cpu > 50 && 'text-yellow-500', proc.cpu > 80 && 'text-destructive')}>{proc.cpu.toFixed(1)}</span></td>
                       <td className="px-3 py-1.5 text-right">{proc.mem.toFixed(1)}</td>
                       <td className="px-3 py-1.5 text-right text-muted-foreground">{formatBytes(proc.rss * 1024)}</td>
                       <td className="px-3 py-1.5 max-w-[250px] truncate font-mono text-xs">{proc.command}</td>
@@ -633,7 +633,7 @@ const GaugeCard = React.memo(function GaugeCard({ icon: Icon, label, value, perc
     <div className="bg-card border border-border rounded-lg p-3">
       <div className="flex items-center gap-1.5 mb-1.5"><Icon className="w-3.5 h-3.5" style={{ color }} /><span className="text-xs font-medium">{label}</span></div>
       <div className="flex items-end gap-2 mb-1.5"><span className="text-xl font-bold" style={{ color }}>{percent}%</span><span className="text-xs text-muted-foreground mb-0.5">{value}</span></div>
-      <div className="h-1.5 bg-secondary rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(percent,100)}%`, backgroundColor: color }} /></div>
+      <div className="h-1.5 bg-secondary rounded-full overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: color }} /></div>
       {details && <p className="text-xs text-muted-foreground mt-2">{details}</p>}
     </div>
   )

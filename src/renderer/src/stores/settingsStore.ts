@@ -33,6 +33,7 @@ export interface AppSettings {
 interface SettingsState {
   settings: AppSettings
   setSettings: (settings: Partial<AppSettings>) => void
+  setSettingsMemOnly: (settings: Partial<AppSettings>) => void
   loadSettings: () => Promise<void>
 }
 
@@ -53,6 +54,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       window.api.config.saveSettings(updated)
       return { settings: updated }
     }),
+
+  // Update in-memory only — no IPC disk write (use for high-freq drag events)
+  setSettingsMemOnly: (newSettings) =>
+    set((state) => ({ settings: { ...state.settings, ...newSettings } })),
 
   loadSettings: async () => {
     const result = await window.api.config.getSettings()

@@ -59,6 +59,7 @@ interface FilePanelProps {
   onDragLeave?: (e: React.DragEvent) => void
   onFileDragStart?: (e: React.DragEvent, file: FileInfo) => void
   renderBreadcrumb: (path: string, isRemote: boolean) => React.ReactNode
+  onNavigateTo: (path: string) => void
 }
 
 function FilePanel({
@@ -83,8 +84,24 @@ function FilePanel({
   onDragLeave,
   onFileDragStart,
   draggableFiles,
-  renderBreadcrumb
+  renderBreadcrumb,
+  onNavigateTo
 }: FilePanelProps) {
+  const [editingPath, setEditingPath] = useState<string | null>(null)
+  const pathInputRef = useRef<HTMLInputElement>(null)
+
+  const handlePathBarClick = () => {
+    setEditingPath(path)
+    // focus input on next tick after state update
+    setTimeout(() => pathInputRef.current?.select(), 0)
+  }
+
+  const commitPath = () => {
+    if (editingPath !== null && editingPath.trim()) {
+      onNavigateTo(editingPath.trim())
+    }
+    setEditingPath(null)
+  }
   return (
     <div
       className={cn(
@@ -119,9 +136,38 @@ function FilePanel({
         </div>
       </div>
 
-      {/* Breadcrumb */}
-      <div className="px-3 py-1.5 border-b border-border bg-card/50">
-        {renderBreadcrumb(path, isRemote)}
+      {/* Path bar — click to edit, Enter to navigate */}
+      <div className="px-2 py-1 border-b border-border bg-card/50">
+        {editingPath !== null ? (
+          <div className="flex items-center gap-1">
+            <input
+              ref={pathInputRef}
+              type="text"
+              value={editingPath}
+              onChange={(e) => setEditingPath(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitPath()
+                if (e.key === 'Escape') setEditingPath(null)
+              }}
+              onBlur={() => setEditingPath(null)}
+              className="flex-1 px-2 py-0.5 bg-background border border-primary/60 rounded text-xs font-mono outline-none focus:ring-1 focus:ring-primary"
+              autoFocus
+            />
+            <button
+              onMouseDown={(e) => { e.preventDefault(); commitPath() }}
+              className="px-2 py-0.5 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 shrink-0"
+            >
+              跳转
+            </button>
+          </div>
+        ) : (
+          <button
+            className="w-full text-left flex items-center gap-0.5 text-sm min-w-0 hover:bg-accent/40 rounded px-1 py-0.5 transition-colors group"
+            onClick={handlePathBarClick}
+            title="点击以手动输入路径">
+            {renderBreadcrumb(path, isRemote)}
+          </button>
+        )}
       </div>
 
       {/* File list */}
@@ -505,9 +551,9 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
     // If dragged file is in selection, drag all selected; otherwise drag just this one
     const filesToDrag = selectedLocal.has(file.filename)
       ? [...selectedLocal].filter((name) => {
-          const f = localFiles.find((lf) => lf.filename === name)
-          return f && !f.isDirectory
-        })
+        const f = localFiles.find((lf) => lf.filename === name)
+        return f && !f.isDirectory
+      })
       : [file.filename]
 
     const paths = filesToDrag.map((filename) => {
@@ -626,6 +672,7 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
           onNavigate={handleLocalNavigate}
           onUp={handleLocalUp}
           onRefresh={localOnRefresh}
+          onNavigateTo={loadLocalFiles}
           renderBreadcrumb={renderBreadcrumb}
         />
         <FilePanel
@@ -648,6 +695,7 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
           onDragOver={handleRemoteDragOver}
           onDragEnter={handleRemoteDragEnter}
           onDragLeave={handleRemoteDragLeave}
+          onNavigateTo={loadRemoteFiles}
           renderBreadcrumb={renderBreadcrumb}
         />
       </div>

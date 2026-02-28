@@ -7,6 +7,7 @@ import {
   Container,
   ArrowRightLeft,
   Code2,
+  FileText,
   Plus
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -18,7 +19,8 @@ const tabIcons: Record<string, typeof Terminal> = {
   sftp: FolderOpen,
   monitor: Activity,
   docker: Container,
-  workspace: Code2
+  workspace: Code2,
+  editor: FileText
 }
 
 const tabTypeLabels: Record<string, string> = {
@@ -26,7 +28,8 @@ const tabTypeLabels: Record<string, string> = {
   sftp: '文件管理',
   monitor: '监控',
   docker: 'Docker',
-  workspace: '开发'
+  workspace: '开发',
+  editor: '编辑'
 }
 
 export function TabBar() {
@@ -81,8 +84,8 @@ export function TabBar() {
   }
 
   const handleOpenPortForward = () => {
-    const event = new CustomEvent('app:openPortForward')
-    window.dispatchEvent(event)
+    useConnectionStore.getState().setBottomPanelVisible(true)
+    useConnectionStore.getState().setBottomPanelActiveTab('ports')
     setContextMenu(null)
   }
 
@@ -176,7 +179,7 @@ export function TabBar() {
             <button
               onClick={() => {
                 handleCloseTab(
-                  { stopPropagation: () => {} } as React.MouseEvent,
+                  { stopPropagation: () => { } } as React.MouseEvent,
                   contextMenu.tab.id
                 )
                 setContextMenu(null)
@@ -195,8 +198,10 @@ export function TabBar() {
         sessionId={workspaceDialog.tab.sessionId}
         onSelect={(path) => {
           const conn = connections.find((c) => c.id === workspaceDialog.tab.connectionId)
-          addTab({ id: uuidv4(), connectionId: workspaceDialog.tab.connectionId, sessionId: workspaceDialog.tab.sessionId,
-            name: `${conn?.name || 'Dev'} - ${path.split('/').pop()}`, type: 'workspace', connected: true, workspacePath: path })
+          addTab({
+            id: uuidv4(), connectionId: workspaceDialog.tab.connectionId, sessionId: workspaceDialog.tab.sessionId,
+            name: `${conn?.name || 'Dev'} - ${path.split('/').pop()}`, type: 'workspace', connected: true, workspacePath: path
+          })
           setWorkspaceDialog(null)
         }}
         onClose={() => setWorkspaceDialog(null)}
@@ -221,7 +226,7 @@ function DirBrowserDialog({ sessionId, onSelect, onClose }: { sessionId: string;
         setCurrentPath(dirPath)
         setManualPath(dirPath)
       }
-    } catch {}
+    } catch { }
     setLoading(false)
   }
 
@@ -253,14 +258,14 @@ function DirBrowserDialog({ sessionId, onSelect, onClose }: { sessionId: string;
         <div className="flex-1 overflow-y-auto px-2 py-1">
           {loading ? <div className="flex items-center justify-center h-full"><span className="text-xs text-muted-foreground">加载中...</span></div> :
             entries.length === 0 ? <div className="flex items-center justify-center h-full"><span className="text-xs text-muted-foreground">无子目录</span></div> :
-            entries.map((e) => (
-              <button key={e.path} onDoubleClick={() => loadDir(e.path)} onClick={() => setManualPath(e.path)}
-                className={cn('flex items-center gap-2 w-full px-3 py-1.5 rounded text-xs hover:bg-accent/50 transition-colors',
-                  manualPath === e.path && 'bg-accent')}>
-                <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                <span className="truncate">{e.name}</span>
-              </button>
-            ))
+              entries.map((e) => (
+                <button key={e.path} onDoubleClick={() => loadDir(e.path)} onClick={() => setManualPath(e.path)}
+                  className={cn('flex items-center gap-2 w-full px-3 py-1.5 rounded text-xs hover:bg-accent/50 transition-colors',
+                    manualPath === e.path && 'bg-accent')}>
+                  <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                  <span className="truncate">{e.name}</span>
+                </button>
+              ))
           }
         </div>
         {/* Footer */}
