@@ -121,7 +121,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
           <ChevronRightIcon className="w-4 h-4 text-muted-foreground" />
         </button>
         <div className="mt-2 writing-mode-vertical text-xs text-muted-foreground select-none"
-             style={{ writingMode: 'vertical-rl' }}>
+          style={{ writingMode: 'vertical-rl' }}>
           监控
         </div>
       </div>
@@ -129,7 +129,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
   }
 
   return (
-    <div className="flex flex-col w-[280px] bg-card border-r border-border shrink-0 overflow-hidden">
+    <div className="flex flex-col w-[280px] bg-card border-r border-border shrink-0 overflow-hidden select-text">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-1.5">

@@ -214,7 +214,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   ]
 
   return (
-    <div className="flex flex-col w-full h-full p-4 gap-3">
+    <div className="flex flex-col w-full h-full p-4 gap-3 select-text">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center bg-card border border-border rounded-lg p-0.5">

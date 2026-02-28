@@ -243,7 +243,7 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
   }
 
   return (
-    <div className="w-full h-full p-3 space-y-3 overflow-y-auto">
+    <div className="w-full h-full p-3 space-y-3 overflow-y-auto select-text">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2"><Monitor className="w-4 h-4 text-primary" /><h2 className="text-sm font-semibold">服务器监控</h2></div>
