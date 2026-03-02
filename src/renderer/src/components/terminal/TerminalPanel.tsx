@@ -231,18 +231,22 @@ function TerminalInstance({
       removeDataListener(); removeCloseListener(); removeErrorListener()
       removeReconnectingListener?.(); removeReconnectedListener?.()
       resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown)
-      terminal.dispose()
+      try { terminal.dispose() } catch { }
+      terminalRef.current = null
     }
   }, [sessionId])
 
   useEffect(() => {
     const terminal = terminalRef.current
-    if (!terminal) return
-    const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
-    terminal.options.theme = theme
-    terminal.options.fontSize = settings.fontSize
-    terminal.options.fontFamily = settings.fontFamily
-    try { fitAddonRef.current?.fit() } catch { }
+    // @ts-ignore
+    if (!terminal || terminal._core?._isDisposed || (terminal as any)._isDisposed) return
+    try {
+      const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
+      terminal.options.theme = theme
+      terminal.options.fontSize = settings.fontSize
+      terminal.options.fontFamily = settings.fontFamily
+      fitAddonRef.current?.fit()
+    } catch { }
   }, [settings.terminalTheme, settings.fontSize, settings.fontFamily])
 
   const handleSearch = useCallback(
