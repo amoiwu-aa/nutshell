@@ -22,6 +22,8 @@ export interface RemoteFileInfo {
   isDirectory: boolean
   isSymlink: boolean
   permissions: string
+  size?: number
+  mtime?: number
 }
 
 // --- Input validation ---
@@ -120,7 +122,9 @@ class SFTPManager {
           },
           isDirectory: (item.attrs.mode! & 0o40000) !== 0,
           isSymlink: item.longname.startsWith('l'),
-          permissions: this.modeToPermissions(item.attrs.mode!)
+          permissions: this.modeToPermissions(item.attrs.mode!),
+          size: item.attrs.size!,
+          mtime: item.attrs.mtime!
         }))
 
         files.sort((a, b) => {
@@ -155,7 +159,7 @@ class SFTPManager {
     // Adaptive chunk size for large files
     const chunkSize = totalSize > 10 * 1024 * 1024 * 1024 ? 1024 * 1024
       : totalSize > 1024 * 1024 * 1024 ? 256 * 1024
-      : 64 * 1024
+        : 64 * 1024
 
     const sftp = await this.getFreshSFTP(sessionId)
 
@@ -189,17 +193,17 @@ class SFTPManager {
         }
       })
 
-      readStream.on('data', (chunk: Buffer) => {
+      readStream.on('data', (chunk: any) => {
         transferred += chunk.length
         this.notifyProgress(id, transferred, totalSize)
       })
 
-      readStream.on('error', (err) => {
+      readStream.on('error', (err: any) => {
         writeStream.destroy()
         finish(aborted ? new Error('Transfer cancelled') : err as Error)
       })
 
-      writeStream.on('error', (err) => {
+      writeStream.on('error', (err: any) => {
         readStream.destroy()
         finish(aborted ? new Error('Transfer cancelled') : err as Error)
       })
@@ -271,18 +275,18 @@ class SFTPManager {
         }
       })
 
-      readStream.on('data', (chunk: Buffer) => {
+      readStream.on('data', (chunk: any) => {
         transferred += chunk.length
         lastActivity = Date.now()
         this.notifyProgress(id, transferred, totalSize)
       })
 
-      readStream.on('error', (err) => {
+      readStream.on('error', (err: any) => {
         writeStream.destroy()
         finish(aborted ? new Error('Transfer cancelled') : err as Error)
       })
 
-      writeStream.on('error', (err) => {
+      writeStream.on('error', (err: any) => {
         readStream.destroy()
         finish(aborted ? new Error('Transfer cancelled') : err as Error)
       })
@@ -405,7 +409,7 @@ class SFTPManager {
         chunks.push(chunk)
       })
 
-      readStream.on('error', (err) => {
+      readStream.on('error', (err: any) => {
         clearTimeout(timer)
         reject(err)
       })
