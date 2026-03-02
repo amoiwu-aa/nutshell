@@ -364,11 +364,34 @@ function AppContent() {
   )
 }
 
+import { Component, ReactNode, ErrorInfo } from 'react'
+
+class GlobalErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; errorInfo: ErrorInfo | null }> {
+  state: { error: Error | null; errorInfo: ErrorInfo | null } = { error: null, errorInfo: null }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    this.setState({ error, errorInfo })
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 20, color: 'red', background: '#1e1e1e', height: '100vh', overflow: 'auto', zIndex: 99999, position: 'relative' }}>
+          <h2>React Application Crash</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{this.state.error.toString()}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#888', marginTop: 10 }}>{this.state.errorInfo?.componentStack}</pre>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function App() {
   return (
-    <ToastProvider>
-      <AppContent />
-    </ToastProvider>
+    <GlobalErrorBoundary>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </GlobalErrorBoundary>
   )
 }
 
