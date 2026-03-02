@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   FolderOpen, FileText, ArrowUp, RefreshCw, Home, ChevronRight, AlertCircle, Upload,
   Trash2, FolderPlus, Pencil, Download, Copy, ClipboardCopy
@@ -41,6 +42,7 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
   const [pathInput, setPathInput] = useState('')
   const pathInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
+  const ctxMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -174,6 +176,25 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
   const closeContextMenu = useCallback(() => {
     setContextMenu((prev) => ({ ...prev, visible: false }))
   }, [])
+
+  // Auto-adjust menu position when it overflows viewport
+  useEffect(() => {
+    if (!contextMenu.visible || !ctxMenuRef.current) return
+    const el = ctxMenuRef.current
+    const rect = el.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    let newX = contextMenu.x
+    let newY = contextMenu.y
+    if (rect.right > vw) newX = vw - rect.width - 4
+    if (rect.bottom > vh) newY = vh - rect.height - 4
+    if (newX < 0) newX = 4
+    if (newY < 0) newY = 4
+    if (newX !== contextMenu.x || newY !== contextMenu.y) {
+      el.style.left = `${newX}px`
+      el.style.top = `${newY}px`
+    }
+  }, [contextMenu.visible, contextMenu.x, contextMenu.y])
 
   useEffect(() => {
     if (contextMenu.visible) {
@@ -405,12 +426,13 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
         )}
       </div>
 
-      {/* Context menu */}
-      {contextMenu.visible && (
+      {/* Context menu — rendered via Portal to escape overflow:hidden clipping */}
+      {contextMenu.visible && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={closeContextMenu} />
+          <div className="fixed inset-0 z-[9998]" onClick={closeContextMenu} />
           <div
-            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px]"
+            ref={ctxMenuRef}
+            className="fixed z-[9999] bg-card border border-border rounded-md shadow-lg py-1 min-w-[140px] context-menu"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {contextMenu.file && (
@@ -502,7 +524,8 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
               刷新
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Rename dialog */}
