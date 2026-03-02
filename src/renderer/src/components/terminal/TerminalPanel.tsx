@@ -186,10 +186,13 @@ function TerminalInstance({
     const removeReconnectingListener = window.api.ssh.onReconnecting?.((sid, attempt) => { if (sid === sessionId) terminal.write(`\r\n\x1b[33m[正在重连... 第 ${attempt} 次尝试]\x1b[0m\r\n`) })
     const removeReconnectedListener = window.api.ssh.onReconnected?.((sid) => { if (sid === sessionId) terminal.write('\r\n\x1b[32m[重连成功]\x1b[0m\r\n') })
 
+    let isDisposed = false
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
     const resizeObserver = new ResizeObserver(() => {
+      if (isDisposed) return
       if (resizeTimer) clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => {
+        if (isDisposed) return
         try {
           const container = containerRef.current
           if (container && container.offsetWidth > 0 && container.offsetHeight > 0) fitAddon.fit()
@@ -203,8 +206,9 @@ function TerminalInstance({
     currentContainer.addEventListener('keydown', handleKeydown)
 
     setTimeout(() => {
+      if (isDisposed) return
       if (containerRef.current && containerRef.current.offsetWidth > 0) {
-        fitAddon.fit()
+        try { fitAddon.fit() } catch { }
 
         // Safely enable Hardware Acceleration ONLY after terminal is fitted into DOM
         try {
@@ -215,11 +219,13 @@ function TerminalInstance({
           try { terminal.loadAddon(new CanvasAddon()) } catch { }
         }
 
+        if (isDisposed) return
         const { cols, rows } = terminal; lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows)
       }
     }, 150)
 
     return () => {
+      isDisposed = true
       if (resizeTimer) clearTimeout(resizeTimer)
       onTerminalRef?.(null)
       removeDataListener(); removeCloseListener(); removeErrorListener()
