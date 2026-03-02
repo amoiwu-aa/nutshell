@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   FolderOpen, FileText, ArrowUp, RefreshCw, Home, ChevronRight, AlertCircle, Upload,
-  Trash2, FolderPlus, Pencil, Download
+  Trash2, FolderPlus, Pencil, Download, Copy, ClipboardCopy
 } from 'lucide-react'
 import { cn, formatBytes, formatDate } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
@@ -417,6 +417,28 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
               <>
                 <button
                   onClick={() => {
+                    const fullPath = remotePath === '/' ? `/${contextMenu.file!.filename}` : `${remotePath}/${contextMenu.file!.filename}`
+                    navigator.clipboard.writeText(fullPath)
+                    closeContextMenu()
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  复制路径
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(contextMenu.file!.filename)
+                    closeContextMenu()
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+                >
+                  <ClipboardCopy className="w-3 h-3" />
+                  复制文件名
+                </button>
+                <div className="border-t border-border my-0.5" />
+                <button
+                  onClick={() => {
                     closeContextMenu()
                     setRenameDialog({ file: contextMenu.file!, newName: contextMenu.file!.filename })
                   }}
@@ -446,6 +468,18 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
                 )}
                 <div className="border-t border-border my-0.5" />
               </>
+            )}
+            {!contextMenu.file && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(remotePath)
+                  closeContextMenu()
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+              >
+                <Copy className="w-3 h-3" />
+                复制当前路径
+              </button>
             )}
             <button
               onClick={() => {
