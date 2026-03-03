@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, Key, Lock, Server, FolderOpen, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useConnectionStore, type ConnectionConfig } from '../../stores/connectionStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { v4 as uuidv4 } from 'uuid'
 
 const colorOptions = [
@@ -17,10 +18,21 @@ const colorOptions = [
 
 export function ConnectionDialog() {
   const { addConnection, updateConnection, connections } = useConnectionStore()
+  const { settings, setSettings } = useSettingsStore()
   const [isOpen, setIsOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [activeAuthTab, setActiveAuthTab] = useState<'password' | 'key'>('password')
+
+  const savedKeys = useMemo(() => {
+    const keys = new Set([
+      ...(settings.savedKeys || []),
+      ...connections.filter((c) => c.privateKeyPath).map((c) => c.privateKeyPath!)
+    ])
+    return Array.from(keys)
+  }, [settings.savedKeys, connections])
+
+  const [customKeyPath, setCustomKeyPath] = useState(false)
 
   const [form, setForm] = useState<ConnectionConfig>({
     id: '',
@@ -64,6 +76,8 @@ export function ConnectionDialog() {
       setActiveAuthTab(e.detail.authType === 'password' ? 'password' : 'key')
       setIsEditing(true)
       setCustomGroup(false)
+      // If the key is not in savedKeys, we might want to show custom path, but wait, useMemo already aggregates it!
+      setCustomKeyPath(false)
       setIsOpen(true)
     }
 
@@ -111,7 +125,14 @@ export function ConnectionDialog() {
       ]
     })
     if (result.success && !result.canceled && result.filePaths.length > 0) {
-      setForm((prev) => ({ ...prev, privateKeyPath: result.filePaths[0] }))
+      const newPath = result.filePaths[0]
+      setForm((prev) => ({ ...prev, privateKeyPath: newPath }))
+
+      const currentSavedKeys = settings.savedKeys || []
+      if (!currentSavedKeys.includes(newPath)) {
+        setSettings({ savedKeys: [...currentSavedKeys, newPath] })
+      }
+      setCustomKeyPath(false)
     }
   }
 
@@ -270,24 +291,80 @@ export function ConnectionDialog() {
             ) : (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1">
-                    私钥文件路径
-                  </label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block text-xs text-muted-foreground">私钥文件</label>
+                    {savedKeys.length > 0 && !customKeyPath && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          setSettings({ savedKeys: (settings.savedKeys || []).filter(k => k !== form.privateKeyPath) })
+                          // if it was the last one, custom path will take over
+                        }}
+                        className="text-[10px] text-destructive hover:underline"
+                        title="从存储记录中删除当前选中的密钥路径"
+                      >
+                        删除记录
+                      </button>
+                    )}
+                  </div>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={form.privateKeyPath || ''}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, privateKeyPath: e.target.value }))
-                      }
-                      placeholder="~/.ssh/id_rsa"
-                      className="flex-1 px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring"
-                    />
+                    {customKeyPath || savedKeys.length === 0 ? (
+                      <input
+                        type="text"
+                        value={form.privateKeyPath || ''}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, privateKeyPath: e.target.value }))
+                        }
+                        placeholder="~/.ssh/id_rsa"
+                        className="flex-1 px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    ) : (
+                      <select
+                        value={savedKeys.includes(form.privateKeyPath || '') ? (form.privateKeyPath || '') : '__custom__'}
+                        onChange={(e) => {
+                          if (e.target.value === '__custom__') {
+                            setCustomKeyPath(true)
+                            setForm((prev) => ({ ...prev, privateKeyPath: '' }))
+                          } else {
+                            setForm((prev) => ({ ...prev, privateKeyPath: e.target.value }))
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring cursor-pointer"
+                      >
+                        {!form.privateKeyPath && <option value="" disabled>--- 请选择已保存的密钥 ---</option>}
+                        {savedKeys.map((k) => (
+                          <option key={k} value={k}>
+                            {k.split(/[/\\]/).pop()} ({k})
+                          </option>
+                        ))}
+                        <option value="__custom__">+ 手动输入路径或添加新文件...</option>
+                      </select>
+                    )}
+
+                    {customKeyPath && savedKeys.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomKeyPath(false)
+                          if (!savedKeys.includes(form.privateKeyPath || '')) {
+                            setForm((prev) => ({ ...prev, privateKeyPath: savedKeys[0] }))
+                          }
+                        }}
+                        className="px-3 py-2 bg-accent hover:bg-accent/80 rounded-lg text-sm transition-colors text-muted-foreground hover:text-foreground"
+                        title="取消手动输入"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+
                     <button
                       onClick={handleSelectKeyFile}
-                      className="px-3 py-2 bg-accent hover:bg-accent/80 rounded-lg text-sm transition-colors"
+                      className="px-3 py-2 flex items-center gap-1.5 bg-accent hover:bg-accent/80 rounded-lg text-sm transition-colors whitespace-nowrap"
+                      title="直接添加并选择私钥文件"
                     >
                       <FolderOpen className="w-4 h-4" />
+                      <span className="hidden sm:inline">浏览</span>
                     </button>
                   </div>
                 </div>

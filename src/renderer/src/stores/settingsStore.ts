@@ -28,6 +28,7 @@ export interface AppSettings {
   language: string
   sidebarWidth: number
   monitorModules: MonitorModules
+  savedKeys?: string[]
 }
 
 interface SettingsState {
@@ -45,7 +46,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     terminalTheme: 'default',
     language: 'zh-CN',
     sidebarWidth: 260,
-    monitorModules: defaultMonitorModules
+    monitorModules: defaultMonitorModules,
+    savedKeys: []
   },
 
   setSettings: (newSettings) =>
