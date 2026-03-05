@@ -10,6 +10,7 @@ import { registerPortForwardHandlers } from './ipc/portForwardHandlers'
 import { registerAIHandlers } from './ipc/aiHandlers'
 import { registerWorkspaceHandlers } from './ipc/workspaceHandlers'
 import { registerLspHandlers } from './ipc/lspHandlers'
+import { registerSystemHandlers } from './ipc/systemHandlers'
 import { sshManager } from './ssh/SSHManager'
 import { serverMonitor } from './monitor/ServerMonitor'
 
@@ -103,6 +104,7 @@ app.whenReady().then(() => {
   registerAIHandlers()
   registerWorkspaceHandlers()
   registerLspHandlers()
+  registerSystemHandlers()
 
   createWindow()
 

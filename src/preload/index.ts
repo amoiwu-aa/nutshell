@@ -114,6 +114,8 @@ const api = {
       ipcRenderer.invoke('sftp:cancelTransfer', transferId),
     getRemoteFileSize: (sessionId: string, remotePath: string) =>
       ipcRenderer.invoke('sftp:getRemoteFileSize', sessionId, remotePath),
+    selectDirectory: (title?: string) =>
+      ipcRenderer.invoke('sftp:selectDirectory', title),
     onProgress: (callback: (id: string, transferred: number, total: number) => void) => {
       const handler = (
         _event: Electron.IpcRendererEvent,
@@ -148,6 +150,14 @@ const api = {
       ipcRenderer.on('monitor:data', handler)
       return () => ipcRenderer.removeListener('monitor:data', handler)
     }
+  },
+
+  // System operations
+  system: {
+    openLocalFile: (path: string) => ipcRenderer.invoke('system:openLocalFile', path),
+    watchLocalFile: (sessionId: string, localPath: string, remotePath: string) => ipcRenderer.invoke('system:watchLocalFile', sessionId, localPath, remotePath),
+    unwatchLocalFile: (localPath: string) => ipcRenderer.invoke('system:unwatchLocalFile', localPath),
+    getTempDir: () => ipcRenderer.invoke('system:getTempDir')
   },
 
   // Docker operations

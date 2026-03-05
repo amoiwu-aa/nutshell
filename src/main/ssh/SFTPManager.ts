@@ -142,8 +142,7 @@ class SFTPManager {
     sessionId: string,
     localPath: string,
     remotePath: string,
-    transferId?: string,
-    resumeOffset?: number
+    transferId?: string
   ): Promise<void> {
     const safePath = sanitizePath(remotePath)
 
@@ -154,19 +153,11 @@ class SFTPManager {
     const stat = fs.statSync(localPath)
     const totalSize = stat.size
     const id = transferId || `${Date.now()}`
-    const offset = resumeOffset || 0
-
-    // Adaptive chunk size for large files
-    const chunkSize = totalSize > 10 * 1024 * 1024 * 1024 ? 1024 * 1024
-      : totalSize > 1024 * 1024 * 1024 ? 256 * 1024
-        : 64 * 1024
 
     const sftp = await this.getFreshSFTP(sessionId)
 
     return new Promise((resolve, reject) => {
-      let aborted = false
       let settled = false
-
       const finish = (err?: Error) => {
         if (settled) return
         settled = true
@@ -175,48 +166,30 @@ class SFTPManager {
         else resolve()
       }
 
-      const readStream = fs.createReadStream(localPath, {
-        start: offset,
-        highWaterMark: chunkSize
-      })
-      const writeStream = sftp.createWriteStream(safePath, {
-        flags: offset > 0 ? 'a' : 'w'
-      })
-
-      let transferred = offset
-
       this.activeTransfers.set(id, {
         abort: () => {
-          aborted = true
-          readStream.destroy()
-          writeStream.destroy()
+          finish(new Error('Transfer cancelled'))
         }
       })
 
-      readStream.on('data', (chunk: any) => {
-        transferred += chunk.length
-        this.notifyProgress(id, transferred, totalSize)
-      })
-
-      readStream.on('error', (err: any) => {
-        writeStream.destroy()
-        finish(aborted ? new Error('Transfer cancelled') : err as Error)
-      })
-
-      writeStream.on('error', (err: any) => {
-        readStream.destroy()
-        finish(aborted ? new Error('Transfer cancelled') : err as Error)
-      })
-
-      writeStream.on('close', () => {
-        if (aborted) finish(new Error('Transfer cancelled'))
-        else {
+      sftp.fastPut(localPath, safePath, {
+        concurrency: 64, // 64 concurrent max-size requests
+        chunkSize: 64 * 1024, // SSH2 max chunk is usually ~32-64k for protocol payload. Concurrency is key.
+        step: (transferred: number, chunk: number, total: number) => {
+          if (this.activeTransfers.has(id)) {
+            this.notifyProgress(id, transferred, total)
+          }
+        }
+      }, (err) => {
+        if (err) {
+          if (this.activeTransfers.has(id)) {
+            finish(err)
+          }
+        } else {
           console.log(`[SFTP] Upload success: ${localPath} -> ${safePath} (${totalSize} bytes)`)
           finish()
         }
       })
-
-      readStream.pipe(writeStream)
     })
   }
 
@@ -224,8 +197,7 @@ class SFTPManager {
     sessionId: string,
     remotePath: string,
     localPath: string,
-    transferId?: string,
-    resumeOffset?: number
+    transferId?: string
   ): Promise<void> {
     const safePath = sanitizePath(remotePath)
     const sftp = await this.getFreshSFTP(sessionId)
@@ -233,10 +205,8 @@ class SFTPManager {
 
     const stats = await this.stat(sessionId, safePath)
     const totalSize = stats.size
-    const offset = resumeOffset || 0
 
     return new Promise((resolve, reject) => {
-      let aborted = false
       let settled = false
       let lastActivity = Date.now()
 
@@ -251,55 +221,35 @@ class SFTPManager {
 
       const inactivityCheck = setInterval(() => {
         if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
-          readStream.destroy()
           finish(new Error('Download timed out (no data received for 60s)'))
         }
       }, 10000)
 
-      const readStreamOpts: any = {}
-      if (offset > 0) readStreamOpts.start = offset
-
-      const readStream = sftp.createReadStream(safePath, readStreamOpts)
-      const writeStream = fs.createWriteStream(localPath, {
-        flags: offset > 0 ? 'r+' : 'w',
-        start: offset > 0 ? offset : undefined
-      })
-
-      let transferred = offset
-
       this.activeTransfers.set(id, {
         abort: () => {
-          aborted = true
-          readStream.destroy()
-          writeStream.destroy()
+          finish(new Error('Transfer cancelled'))
         }
       })
 
-      readStream.on('data', (chunk: any) => {
-        transferred += chunk.length
-        lastActivity = Date.now()
-        this.notifyProgress(id, transferred, totalSize)
-      })
-
-      readStream.on('error', (err: any) => {
-        writeStream.destroy()
-        finish(aborted ? new Error('Transfer cancelled') : err as Error)
-      })
-
-      writeStream.on('error', (err: any) => {
-        readStream.destroy()
-        finish(aborted ? new Error('Transfer cancelled') : err as Error)
-      })
-
-      writeStream.on('close', () => {
-        if (aborted) finish(new Error('Transfer cancelled'))
-        else {
+      sftp.fastGet(safePath, localPath, {
+        concurrency: 64, // 64 concurrent reads
+        chunkSize: 64 * 1024,
+        step: (transferred: number, chunk: number, total: number) => {
+          lastActivity = Date.now()
+          if (this.activeTransfers.has(id)) {
+            this.notifyProgress(id, transferred, total)
+          }
+        }
+      }, (err) => {
+        if (err) {
+          if (this.activeTransfers.has(id)) {
+            finish(err)
+          }
+        } else {
           console.log(`[SFTP] Download success: ${safePath} -> ${localPath} (${totalSize} bytes)`)
           finish()
         }
       })
-
-      readStream.pipe(writeStream)
     })
   }
 
@@ -546,7 +496,33 @@ class SFTPManager {
     return `${owner}${group}${others}`
   }
 
+  private _lastProgressTime: Map<string, number> = new Map()
+  private _pendingProgress: Map<string, { transferred: number; total: number }> = new Map()
+
   private notifyProgress(id: string, transferred: number, total: number): void {
+    const now = Date.now()
+    const last = this._lastProgressTime.get(id) || 0
+    const isComplete = transferred >= total
+
+    if (!isComplete && now - last < 200) {
+      // Throttle: queue this update, it will be sent on next allowed tick
+      this._pendingProgress.set(id, { transferred, total })
+      if (!this._lastProgressTime.has(id + '_timer')) {
+        this._lastProgressTime.set(id + '_timer', 1)
+        setTimeout(() => {
+          this._lastProgressTime.delete(id + '_timer')
+          const pending = this._pendingProgress.get(id)
+          if (pending) {
+            this._pendingProgress.delete(id)
+            this.notifyProgress(id, pending.transferred, pending.total)
+          }
+        }, 200)
+      }
+      return
+    }
+
+    this._lastProgressTime.set(id, now)
+    this._pendingProgress.delete(id)
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('sftp:progress', id, transferred, total)
     }

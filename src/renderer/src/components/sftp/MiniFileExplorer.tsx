@@ -40,6 +40,8 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
   const [mkdirDialog, setMkdirDialog] = useState<{ name: string } | null>(null)
   const [editingPath, setEditingPath] = useState(false)
   const [pathInput, setPathInput] = useState('')
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const lastClickedIndexRef = useRef<number>(-1)
   const pathInputRef = useRef<HTMLInputElement>(null)
   const dragCounterRef = useRef(0)
   const ctxMenuRef = useRef<HTMLDivElement>(null)
@@ -60,6 +62,8 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
   const loadFiles = useCallback(async (path: string) => {
     setLoading(true)
     setError(null)
+    setSelectedFiles(new Set())
+    lastClickedIndexRef.current = -1
     try {
       const result = await window.api.sftp.list(sessionId, path)
       if (result.success) {
@@ -166,12 +170,42 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
     }
   }, [sessionId, remotePath, loadFiles])
 
+  // File selection
+  const handleFileClick = useCallback((e: React.MouseEvent, file: FileInfo, index: number) => {
+    e.stopPropagation()
+    setSelectedFiles(prev => {
+      const next = new Set(prev)
+      if (e.shiftKey && lastClickedIndexRef.current >= 0) {
+        // Range select
+        const start = Math.min(lastClickedIndexRef.current, index)
+        const end = Math.max(lastClickedIndexRef.current, index)
+        for (let i = start; i <= end; i++) {
+          next.add(files[i].filename)
+        }
+      } else if (e.ctrlKey || e.metaKey) {
+        // Toggle individual
+        if (next.has(file.filename)) next.delete(file.filename)
+        else next.add(file.filename)
+      } else {
+        // Single select
+        next.clear()
+        next.add(file.filename)
+      }
+      return next
+    })
+    lastClickedIndexRef.current = index
+  }, [files])
+
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, file: FileInfo | null) => {
     e.preventDefault()
     e.stopPropagation()
+    // If right-clicking a file that's not already selected, select just that file
+    if (file && !selectedFiles.has(file.filename)) {
+      setSelectedFiles(new Set([file.filename]))
+    }
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, file })
-  }, [])
+  }, [selectedFiles])
 
   const closeContextMenu = useCallback(() => {
     setContextMenu((prev) => ({ ...prev, visible: false }))
@@ -266,21 +300,53 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
     setMkdirDialog(null)
   }, [mkdirDialog, sessionId, remotePath, loadFiles])
 
-  const handleDownload = useCallback(async (file: FileInfo) => {
-    closeContextMenu()
+  const startTrackedDownload = useCallback((file: FileInfo, targetDir: string) => {
     if (file.isDirectory) return
     const fullPath = remotePath === '/' ? `/${file.filename}` : `${remotePath}/${file.filename}`
-    try {
-      const result = await window.api.sftp.download(sessionId, fullPath, '')
-      if (result && !result.success) {
-        setUploadStatus(`下载失败: ${result.error || '未知错误'}`)
-        setTimeout(() => setUploadStatus(''), 3000)
-      }
-    } catch (err: any) {
-      setUploadStatus(`下载失败: ${err?.message || '未知错误'}`)
-      setTimeout(() => setUploadStatus(''), 3000)
+    const localDest = `${targetDir}\\${file.filename}`
+    const transferId = crypto.randomUUID()
+    const item: TransferItem = {
+      id: transferId, sessionId, direction: 'download',
+      localPath: localDest, remotePath: fullPath, filename: file.filename,
+      totalSize: file.size || 0, transferredBytes: 0,
+      status: 'active', speed: 0, eta: 0,
+      startedAt: Date.now(), resumable: false, resumeOffset: 0
     }
-  }, [sessionId, remotePath, closeContextMenu])
+    useTransferStore.getState().addTransfer(item)
+    window.api.sftp.downloadWithId(sessionId, fullPath, localDest, transferId).then((result: any) => {
+      if (result && !result.success) {
+        useTransferStore.getState().setStatus(transferId, 'failed', result.error)
+      } else {
+        useTransferStore.getState().setStatus(transferId, 'completed')
+      }
+    }).catch((err: any) => {
+      useTransferStore.getState().setStatus(transferId, 'failed', err?.message)
+    })
+  }, [sessionId, remotePath])
+
+  const handleDownloadSingle = useCallback(async (file: FileInfo) => {
+    closeContextMenu()
+    const dirResult = await window.api.sftp.selectDirectory('选择下载保存目录')
+    if (!dirResult?.success || !dirResult.path) return
+    startTrackedDownload(file, dirResult.path)
+    useConnectionStore.getState().setBottomPanelActiveTab('transfers')
+    useConnectionStore.getState().setBottomPanelVisible(true)
+  }, [closeContextMenu, startTrackedDownload])
+
+  const handleDownloadSelected = useCallback(async () => {
+    closeContextMenu()
+    const filesToDownload = files.filter(f => selectedFiles.has(f.filename) && !f.isDirectory)
+    if (filesToDownload.length === 0) return
+    const dirResult = await window.api.sftp.selectDirectory('选择下载保存目录')
+    if (!dirResult?.success || !dirResult.path) return
+    for (const file of filesToDownload) {
+      startTrackedDownload(file, dirResult.path)
+    }
+    useConnectionStore.getState().setBottomPanelActiveTab('transfers')
+    useConnectionStore.getState().setBottomPanelVisible(true)
+    setUploadStatus(`${filesToDownload.length} 个文件开始下载`)
+    setTimeout(() => setUploadStatus(''), 2000)
+  }, [closeContextMenu, files, selectedFiles, startTrackedDownload])
 
   const parts = remotePath.split('/').filter(Boolean)
 
@@ -392,15 +458,19 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
               </tr>
             </thead>
             <tbody>
-              {files.map((file) => (
+              {files.map((file, index) => (
                 <tr
                   key={file.filename}
+                  onClick={(e) => handleFileClick(e, file, index)}
                   onDoubleClick={() => {
                     if (file.isDirectory) handleNavigate(file.filename)
                     else handleEditFile(file.filename)
                   }}
                   onContextMenu={(e) => handleContextMenu(e, file)}
-                  className="file-row cursor-pointer transition-colors"
+                  className={cn(
+                    'file-row cursor-pointer transition-colors',
+                    selectedFiles.has(file.filename) && 'selected'
+                  )}
                 >
                   <td className="px-2 py-0.5 flex items-center gap-1.5">
                     {file.isDirectory ? (
@@ -459,6 +529,27 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
                   复制文件名
                 </button>
                 <div className="border-t border-border my-0.5" />
+                {/* Download single file */}
+                {!contextMenu.file.isDirectory && (
+                  <button
+                    onClick={() => handleDownloadSingle(contextMenu.file!)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    下载
+                  </button>
+                )}
+                {/* Download all selected files (shown when multiple selected) */}
+                {selectedFiles.size > 1 && (
+                  <button
+                    onClick={handleDownloadSelected}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors text-primary"
+                  >
+                    <Download className="w-3 h-3" />
+                    下载选中 ({[...selectedFiles].filter(n => { const f = files.find(ff => ff.filename === n); return f && !f.isDirectory }).length} 个文件)
+                  </button>
+                )}
+                <div className="border-t border-border my-0.5" />
                 <button
                   onClick={() => {
                     closeContextMenu()
@@ -492,16 +583,29 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
               </>
             )}
             {!contextMenu.file && (
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(remotePath)
-                  closeContextMenu()
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
-              >
-                <Copy className="w-3 h-3" />
-                复制当前路径
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(remotePath)
+                    closeContextMenu()
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  复制当前路径
+                </button>
+                {/* Batch download from background (no specific file right-clicked) */}
+                {selectedFiles.size > 0 && (
+                  <button
+                    onClick={handleDownloadSelected}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors text-primary"
+                  >
+                    <Download className="w-3 h-3" />
+                    下载选中 ({[...selectedFiles].filter(n => { const f = files.find(ff => ff.filename === n); return f && !f.isDirectory }).length} 个文件)
+                  </button>
+                )}
+                <div className="border-t border-border my-0.5" />
+              </>
             )}
             <button
               onClick={() => {
@@ -575,7 +679,7 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
 
       {/* Status */}
       <div className="px-2 py-0.5 border-t border-border/50 text-[10px] text-muted-foreground shrink-0">
-        {uploadStatus || `${files.length} 个项目`}
+        {uploadStatus || `${files.length} 个项目${selectedFiles.size > 0 ? ` | ${selectedFiles.size} 个已选择` : ''}`}
       </div>
     </div>
   )

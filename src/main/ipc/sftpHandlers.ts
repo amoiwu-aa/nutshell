@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog, BrowserWindow, app } from 'electron'
+import path from 'path'
 import { sftpManager } from '../ssh/SFTPManager'
 import { sshManager } from '../ssh/SSHManager'
 
@@ -108,12 +109,12 @@ export function registerSFTPHandlers(): void {
     }
   )
 
-  // Enhanced upload with transferId and resumeOffset
+  // Enhanced upload with transferId
   ipcMain.handle(
     'sftp:uploadWithId',
-    async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string, resumeOffset?: number) => {
+    async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string) => {
       try {
-        await sftpManager.upload(sessionId, localPath, remotePath, transferId, resumeOffset)
+        await sftpManager.upload(sessionId, localPath, remotePath, transferId)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -121,13 +122,20 @@ export function registerSFTPHandlers(): void {
     }
   )
 
-  // Enhanced download with transferId and resumeOffset
+  // Enhanced download with transferId
   ipcMain.handle(
     'sftp:downloadWithId',
-    async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string, resumeOffset?: number) => {
+    async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
       try {
-        await sftpManager.download(sessionId, remotePath, localPath, transferId, resumeOffset)
-        return { success: true }
+        let dest = localPath
+        // If localPath is empty, derive it from Downloads folder + remote filename
+        if (!dest) {
+          const downloadsDir = app.getPath('downloads')
+          const fileName = path.posix.basename(remotePath)
+          dest = path.join(downloadsDir, fileName)
+        }
+        await sftpManager.download(sessionId, remotePath, dest, transferId)
+        return { success: true, localPath: dest }
       } catch (error: any) {
         return { success: false, error: error.message }
       }
@@ -170,5 +178,18 @@ export function registerSFTPHandlers(): void {
     } catch (error: any) {
       return { success: false, error: error.message, home: '/' }
     }
+  })
+
+  // Select a directory via native OS dialog
+  ipcMain.handle('sftp:selectDirectory', async (_event, title?: string) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const result = await dialog.showOpenDialog(win!, {
+      title: title || '选择下载目录',
+      properties: ['openDirectory']
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true }
+    }
+    return { success: true, path: result.filePaths[0] }
   })
 }
