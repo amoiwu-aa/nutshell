@@ -337,10 +337,10 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
                 <span className="font-mono w-24 truncate text-muted-foreground" title={d.filesystem}>{d.filesystem}</span>
                 <span className="w-28 truncate font-medium" title={d.mountPoint}>{d.mountPoint}</span>
                 <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(d.percent, 100)}%`, backgroundColor: d.percent > 90 ? '#ef4444' : d.percent > 70 ? '#f59e0b' : '#10b981' }} />
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(0, 100 - Math.min(d.percent, 100))}%`, backgroundColor: d.percent > 90 ? '#ef4444' : d.percent > 70 ? '#f59e0b' : '#10b981' }} />
                 </div>
                 <span className="w-12 text-right">{d.percent}%</span>
-                <span className="w-32 text-right text-muted-foreground">{formatBytes(d.used)} / {formatBytes(d.total)}</span>
+                <span className="w-36 text-right text-muted-foreground">剩余 {formatBytes(d.total - d.used)} / {formatBytes(d.total)}</span>
               </div>
             ))}
           </div>

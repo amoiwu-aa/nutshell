@@ -340,14 +340,14 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="truncate max-w-[120px]" title={d.mountPoint}>{d.mountPoint}</span>
                         <span className="text-muted-foreground shrink-0 ml-1">
-                          {formatBytes(d.used)}/{formatBytes(d.total)}
+                          剩余 {formatBytes(d.total - d.used)}/{formatBytes(d.total)}
                         </span>
                       </div>
                       <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all duration-500"
                           style={{
-                            width: `${Math.min(d.percent, 100)}%`,
+                            width: `${Math.max(0, 100 - Math.min(d.percent, 100))}%`,
                             backgroundColor: d.percent > 90 ? '#ef4444' : d.percent > 70 ? '#f59e0b' : '#10b981'
                           }}
                         />

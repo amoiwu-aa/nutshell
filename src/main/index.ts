@@ -13,6 +13,7 @@ import { registerLspHandlers } from './ipc/lspHandlers'
 import { registerSystemHandlers } from './ipc/systemHandlers'
 import { sshManager } from './ssh/SSHManager'
 import { serverMonitor } from './monitor/ServerMonitor'
+import { configStore } from './store/ConfigStore'
 
 // Prevent uncaught exceptions from crashing the app (e.g., ssh2 socket errors)
 process.on('uncaughtException', (err) => {
@@ -25,9 +26,13 @@ process.on('unhandledRejection', (reason) => {
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  const savedBounds = configStore.getWindowBounds()
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: savedBounds.width,
+    height: savedBounds.height,
+    x: savedBounds.x,
+    y: savedBounds.y,
     minWidth: 1000,
     minHeight: 600,
     show: false,
@@ -42,9 +47,41 @@ function createWindow(): void {
     }
   })
 
+  if (savedBounds.isMaximized) {
+    mainWindow.maximize()
+  }
+
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  // Save window bounds on move/resize (debounced)
+  let boundsTimer: ReturnType<typeof setTimeout> | null = null
+  const saveBounds = () => {
+    if (boundsTimer) clearTimeout(boundsTimer)
+    boundsTimer = setTimeout(() => {
+      if (!mainWindow) return
+      const isMaximized = mainWindow.isMaximized()
+      if (!isMaximized) {
+        const bounds = mainWindow.getBounds()
+        configStore.saveWindowBounds({
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          isMaximized: false
+        })
+      } else {
+        // Only update maximized flag, keep the last normal bounds
+        const current = configStore.getWindowBounds()
+        configStore.saveWindowBounds({ ...current, isMaximized: true })
+      }
+    }, 500)
+  }
+  mainWindow.on('resize', saveBounds)
+  mainWindow.on('move', saveBounds)
+  mainWindow.on('maximize', saveBounds)
+  mainWindow.on('unmaximize', saveBounds)
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)

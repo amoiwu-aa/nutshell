@@ -63,7 +63,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   sidebarCollapsed: false,
   monitorPanelVisible: true,
   bottomPanelVisible: true,
-  bottomPanelHeight: 250,
+  bottomPanelHeight: 350,
   bottomPanelActiveTab: 'commands',
 
   setConnections: (connections) => set({ connections }),

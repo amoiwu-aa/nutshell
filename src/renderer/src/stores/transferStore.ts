@@ -68,6 +68,9 @@ export const useTransferStore = create<TransferState>((set, get) => ({
     set((state) => ({
       transfers: state.transfers.map((t) => {
         if (t.id !== id) return t
+        // Ignore progress updates for terminal states to prevent late IPC events from making them 'active' again
+        if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') return t
+
         const newSpeed = speed >= 0 ? speed : t.speed
         const remaining = total - transferred
         const eta = newSpeed > 0 ? remaining / newSpeed : 0
@@ -94,12 +97,30 @@ export const useTransferStore = create<TransferState>((set, get) => ({
           updates.speed = 0
           updates.eta = 0
           progressTimestamps.delete(id)
+          // Desktop notification
+          try {
+            const dirLabel = t.direction === 'upload' ? '上传' : '下载'
+            new Notification(`${dirLabel}完成`, {
+              body: t.filename,
+              silent: false
+            })
+          } catch { /* notification not supported */ }
         }
         if (status === 'failed' || status === 'cancelled') {
           updates.resumable = t.transferredBytes > 0
           updates.speed = 0
           updates.eta = 0
           progressTimestamps.delete(id)
+          // Desktop notification for failure
+          if (status === 'failed') {
+            try {
+              const dirLabel = t.direction === 'upload' ? '上传' : '下载'
+              new Notification(`${dirLabel}失败`, {
+                body: `${t.filename}${error ? ' - ' + error : ''}`,
+                silent: false
+              })
+            } catch { /* notification not supported */ }
+          }
         }
         return { ...t, ...updates }
       })

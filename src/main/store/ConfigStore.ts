@@ -88,6 +88,14 @@ export interface ChatConversation {
   messages: Array<{ role: string; content: string; timestamp: number }>
 }
 
+interface WindowBounds {
+  x?: number
+  y?: number
+  width: number
+  height: number
+  isMaximized: boolean
+}
+
 interface StoreSchema {
   connections: ConnectionConfig[]
   snippets: Snippet[]
@@ -95,6 +103,7 @@ interface StoreSchema {
   encryptionSalt: string
   sessionState: SessionState
   aiChatHistory: Record<string, ChatConversation[]>
+  windowBounds: WindowBounds
 }
 
 const defaultMonitorModules: MonitorModules = {
@@ -129,7 +138,8 @@ class ConfigStore {
         settings: defaultSettings,
         encryptionSalt: '',
         sessionState: { tabs: [] },
-        aiChatHistory: {}
+        aiChatHistory: {},
+        windowBounds: { width: 1920, height: 1080, isMaximized: false }
       }
     })
 
@@ -231,6 +241,15 @@ class ConfigStore {
   saveSettings(settings: Partial<AppSettings>): void {
     const current = this.getSettings()
     this.store.set('settings', { ...current, ...settings })
+  }
+
+  // --- Window bounds ---
+  getWindowBounds(): WindowBounds {
+    return this.store.get('windowBounds', { width: 1920, height: 1080, isMaximized: false })
+  }
+
+  saveWindowBounds(bounds: WindowBounds): void {
+    this.store.set('windowBounds', bounds)
   }
 
   // --- Session persistence ---
