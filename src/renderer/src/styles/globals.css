@@ -117,22 +117,22 @@
   .dark.theme-glass {
     --background: 220 20% 8%;
     --foreground: 210 40% 98%;
-    --card: 220 20% 12% / 0.55;
+    --card: 220 25% 14%;
     --card-foreground: 210 40% 98%;
-    --popover: 220 20% 12% / 0.7;
+    --popover: 220 25% 14%;
     --popover-foreground: 210 40% 98%;
     --primary: 200 90% 58%;
     --primary-foreground: 220 20% 6%;
-    --secondary: 220 15% 18% / 0.4;
+    --secondary: 220 15% 18%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 220 15% 18% / 0.4;
+    --muted: 220 15% 18%;
     --muted-foreground: 210 15% 62%;
-    --accent: 220 15% 22% / 0.4;
+    --accent: 220 15% 22%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 15% 30% / 0.3;
-    --input: 220 15% 22% / 0.35;
+    --border: 220 20% 25%;
+    --input: 220 15% 22%;
     --ring: 200 90% 58%;
   }
 
@@ -206,31 +206,78 @@
   }
 }
 
-/* Glass theme — glassmorphism effects */
-.theme-glass .bg-card,
-.theme-glass [class*="bg-card"] {
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+/* Glass theme — real glassmorphism effects */
+
+/* Animated gradient mesh background — gives the blur something to refract */
+.theme-glass body {
+  background:
+    radial-gradient(ellipse at 15% 20%, hsla(200, 80%, 35%, 0.35) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 25%, hsla(260, 70%, 40%, 0.25) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, hsla(170, 70%, 30%, 0.2) 0%, transparent 55%),
+    hsl(220, 20%, 8%) !important;
 }
 
-.theme-glass .bg-popover,
-.theme-glass [class*="bg-popover"] {
-  backdrop-filter: blur(20px) saturate(1.8);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+@keyframes glass-gradient-shift {
+
+  0%,
+  100% {
+    background-position: 0% 0%, 100% 0%, 50% 100%;
+  }
+
+  50% {
+    background-position: 20% 30%, 80% 10%, 40% 70%;
+  }
 }
 
-.theme-glass .dialog-content {
+/* All card-like panels: sidebar, file panels, table headers */
+.theme-glass .bg-card {
+  background-color: rgba(20, 30, 50, 0.45) !important;
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  border-color: rgba(100, 160, 220, 0.12) !important;
+}
+
+/* Tab bars, borders */
+.theme-glass .border-border {
+  border-color: rgba(100, 160, 220, 0.12) !important;
+}
+
+/* Hover accents stay translucent */
+.theme-glass .hover\:bg-accent:hover {
+  background-color: rgba(60, 100, 160, 0.2) !important;
+}
+
+/* Popover/dropdown overlays */
+.theme-glass .bg-popover {
+  background-color: rgba(18, 28, 48, 0.65) !important;
   backdrop-filter: blur(24px) saturate(1.8);
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  border-color: rgba(100, 160, 220, 0.15) !important;
+}
+
+/* Dialogs — strong blur, highly translucent */
+.theme-glass .dialog-content {
+  background-color: rgba(15, 25, 45, 0.6) !important;
+  backdrop-filter: blur(28px) saturate(1.8);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
   box-shadow:
     0 30px 60px -15px rgba(0, 0, 0, 0.5),
-    0 0 0 1px hsla(200, 60%, 60%, 0.15),
-    inset 0 1px 0 0 hsla(200, 60%, 80%, 0.08);
+    0 0 0 1px rgba(100, 180, 255, 0.12),
+    inset 0 1px 0 0 rgba(150, 200, 255, 0.08);
+  border-color: rgba(100, 160, 220, 0.15) !important;
 }
 
+/* Context menus */
 .theme-glass .context-menu {
-  backdrop-filter: blur(24px) saturate(1.8);
-  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  background-color: rgba(18, 28, 48, 0.7) !important;
+  backdrop-filter: blur(28px) saturate(1.8);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  border-color: rgba(100, 160, 220, 0.15) !important;
+}
+
+/* Input fields */
+.theme-glass .bg-background {
+  background-color: rgba(12, 20, 38, 0.5) !important;
 }
 
 /* Focus visible for keyboard navigation */
