@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Container, Image, Play, Square, RefreshCw, Trash2, Terminal, FileText,
   Download, Upload, RotateCcw, Search, FolderOpen, ArrowUp, Home, ChevronRight,
-  X, AlertCircle, Copy, Plus, Network, Info, Settings, Layers
+  X, AlertCircle, Copy, Check, Plus, Network, Info, Settings, Layers, Save
 } from 'lucide-react'
 import { cn, formatBytes } from '../../lib/utils'
 
@@ -405,43 +405,8 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
 
       {/* ===== MODALS ===== */}
 
-      {/* Log Viewer */}
-      {logViewer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onKeyDown={(e) => e.key === 'Escape' && setLogViewer(null)}>
-          <div className="absolute inset-0 bg-black/50 dialog-overlay" onClick={() => setLogViewer(null)} />
-          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-[900px] max-h-[85vh] overflow-hidden dialog-content flex flex-col">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-              <h3 className="text-sm font-medium">容器日志 - {logViewer.name}</h3>
-              <div className="flex items-center gap-1">
-                <button onClick={() => navigator.clipboard.writeText(logViewer.logs)} className="flex items-center gap-1 px-2 py-1 text-xs bg-secondary rounded hover:bg-secondary/80"><Copy className="w-3 h-3" />复制全部</button>
-                <button onClick={() => setLogViewer(null)} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 px-5 py-2 border-b border-border shrink-0 flex-wrap">
-              <select value={logViewer.tail} onChange={(e) => setLogViewer((p: any) => p ? { ...p, tail: e.target.value === 'all' ? 'all' : parseInt(e.target.value) } : null)} className="px-2 py-1 bg-background border border-input rounded text-xs outline-none">
-                <option value={100}>100行</option><option value={500}>500行</option><option value={1000}>1000行</option><option value="all">全部</option>
-              </select>
-              <input type="datetime-local" value={logViewer.since} onChange={(e) => setLogViewer((p: any) => p ? { ...p, since: e.target.value } : null)} className="px-2 py-1 bg-background border border-input rounded text-xs outline-none" />
-              <input type="datetime-local" value={logViewer.until} onChange={(e) => setLogViewer((p: any) => p ? { ...p, until: e.target.value } : null)} className="px-2 py-1 bg-background border border-input rounded text-xs outline-none" />
-              <button onClick={refreshLogs} disabled={logViewer.loading} className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs"><RefreshCw className={cn('w-3 h-3 inline', logViewer.loading && 'animate-spin')} /> 刷新</button>
-            </div>
-            <div className="flex items-center gap-2 px-5 py-1.5 border-b border-border shrink-0">
-              <Search className="w-3.5 h-3.5 text-muted-foreground" />
-              <input type="text" value={logViewer.searchText} onChange={(e) => setLogViewer((p: any) => p ? { ...p, searchText: e.target.value } : null)} placeholder="搜索日志..." className="flex-1 bg-background px-2 py-1 rounded text-xs outline-none border border-input" />
-            </div>
-            <pre ref={logPreRef} className="flex-1 p-4 text-xs font-mono bg-[#0d1117] text-[#c9d1d9] whitespace-pre-wrap overflow-auto min-h-[200px]" style={{ userSelect: 'text' }}
-              onContextMenu={(e) => { const s = window.getSelection()?.toString(); if (s) { e.preventDefault(); navigator.clipboard.writeText(s) } }}>
-              {logViewer.loading ? 'Loading...' : logViewer.searchText
-                ? logViewer.logs.split('\n').map((line: string, i: number) => {
-                  const esc = logViewer.searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-                  const rx = new RegExp(`(${esc})`, 'gi')
-                  return rx.test(line) ? <span key={i}>{line.split(rx).map((p: string, j: number) => rx.test(p) ? <mark key={j} className="bg-yellow-500/40 text-yellow-200">{p}</mark> : p)}{'\n'}</span> : <span key={i}>{line}{'\n'}</span>
-                })
-                : logViewer.logs}
-            </pre>
-          </div>
-        </div>
-      )}
+      {/* Log Viewer — virtualized */}
+      {logViewer && <VirtualLogViewer logViewer={logViewer} setLogViewer={setLogViewer} logPreRef={logPreRef} refreshLogs={refreshLogs} />}
 
       {/* Container Detail */}
       {containerDetail && <ContainerDetailModal
@@ -538,6 +503,162 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ===== Virtualized Log Viewer =====
+const LINE_HEIGHT = 16 // px per line (text-xs + mono)
+const OVERSCAN = 30 // extra lines above/below viewport for smooth scrolling
+
+function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
+  logViewer: any; setLogViewer: (fn: any) => void; logPreRef: React.RefObject<HTMLPreElement | null>; refreshLogs: () => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewHeight, setViewHeight] = useState(600)
+  const [copied, setCopied] = useState(false)
+
+  // Parse lines once
+  const allLines = useMemo(() => logViewer.logs ? logViewer.logs.split('\n') : [], [logViewer.logs])
+  const totalLineCount = allLines.length
+
+  // Filter lines if search
+  const displayLines = useMemo(() => {
+    if (!logViewer.searchText) return allLines.map((text: string, idx: number) => ({ text, idx }))
+    const esc = logViewer.searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const rx = new RegExp(esc, 'gi')
+    return allLines
+      .map((text: string, idx: number) => ({ text, idx }))
+      .filter((l: { text: string }) => rx.test(l.text))
+  }, [allLines, logViewer.searchText])
+
+  const lineCount = displayLines.length
+  const totalHeight = lineCount * LINE_HEIGHT
+  const startIdx = Math.max(0, Math.floor(scrollTop / LINE_HEIGHT) - OVERSCAN)
+  const endIdx = Math.min(lineCount, Math.ceil((scrollTop + viewHeight) / LINE_HEIGHT) + OVERSCAN)
+  const visibleSlice = displayLines.slice(startIdx, endIdx)
+
+  // On mount + log change, auto-scroll to bottom
+  useEffect(() => {
+    if (!logViewer.loading && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [logViewer.logs, logViewer.loading])
+
+  // Track viewport size
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setViewHeight(el.clientHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop)
+  }, [])
+
+  // Async copy — will not freeze UI
+  const handleCopyAll = useCallback(async () => {
+    try {
+      const blob = new Blob([logViewer.logs], { type: 'text/plain' })
+      await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })])
+    } catch {
+      // Fallback
+      try { await navigator.clipboard.writeText(logViewer.logs) } catch { /* ignore */ }
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }, [logViewer.logs])
+
+  // Save logs to local file via Blob download
+  const handleSaveToFile = useCallback(() => {
+    const blob = new Blob([logViewer.logs], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${logViewer.name}-logs.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [logViewer.logs, logViewer.name])
+
+  // Render a single line (with highlight if searching)
+  const renderLine = useCallback((line: { text: string; idx: number }) => {
+    if (!logViewer.searchText) return line.text + '\n'
+    const esc = logViewer.searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const rx = new RegExp(`(${esc})`, 'gi')
+    const parts = line.text.split(rx)
+    return (
+      <span key={line.idx}>
+        {parts.map((p: string, j: number) =>
+          rx.test(p) ? <mark key={j} className="bg-yellow-500/40 text-yellow-200">{p}</mark> : p
+        )}{'\n'}
+      </span>
+    )
+  }, [logViewer.searchText])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onKeyDown={(e) => e.key === 'Escape' && setLogViewer(null)}>
+      <div className="absolute inset-0 bg-black/50 dialog-overlay" onClick={() => setLogViewer(null)} />
+      <div className="relative bg-card border border-border rounded-xl shadow-2xl w-[900px] max-h-[85vh] overflow-hidden dialog-content flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+          <h3 className="text-sm font-medium">容器日志 - {logViewer.name}</h3>
+          <div className="flex items-center gap-1">
+            <button onClick={handleSaveToFile} className="flex items-center gap-1 px-2 py-1 text-xs bg-secondary rounded hover:bg-secondary/80" title="保存到文件">
+              <Save className="w-3 h-3" />保存
+            </button>
+            <button
+              onClick={handleCopyAll}
+              className={cn('flex items-center gap-1 px-2 py-1 text-xs rounded transition-all', copied ? 'bg-green-500/20 text-green-500' : 'bg-secondary hover:bg-secondary/80')}
+            >
+              {copied ? <><Check className="w-3 h-3" />已复制</> : <><Copy className="w-3 h-3" />复制全部</>}
+            </button>
+            <button onClick={() => setLogViewer(null)} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-5 py-2 border-b border-border shrink-0 flex-wrap">
+          <select value={logViewer.tail} onChange={(e) => setLogViewer((p: any) => p ? { ...p, tail: e.target.value === 'all' ? 'all' : parseInt(e.target.value) } : null)} className="px-2 py-1 bg-background border border-input rounded text-xs outline-none">
+            <option value={100}>100行</option><option value={500}>500行</option><option value={1000}>1000行</option><option value={5000}>5000行</option><option value={10000}>10000行</option><option value="all">全部</option>
+          </select>
+          <input type="datetime-local" value={logViewer.since} onChange={(e) => setLogViewer((p: any) => p ? { ...p, since: e.target.value } : null)} className="px-2 py-1 bg-background border border-input rounded text-xs outline-none" />
+          <input type="datetime-local" value={logViewer.until} onChange={(e) => setLogViewer((p: any) => p ? { ...p, until: e.target.value } : null)} className="px-2 py-1 bg-background border border-input rounded text-xs outline-none" />
+          <button onClick={refreshLogs} disabled={logViewer.loading} className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs"><RefreshCw className={cn('w-3 h-3 inline', logViewer.loading && 'animate-spin')} /> 刷新</button>
+        </div>
+        <div className="flex items-center gap-2 px-5 py-1.5 border-b border-border shrink-0">
+          <Search className="w-3.5 h-3.5 text-muted-foreground" />
+          <input type="text" value={logViewer.searchText} onChange={(e) => setLogViewer((p: any) => p ? { ...p, searchText: e.target.value } : null)} placeholder="搜索日志..." className="flex-1 bg-background px-2 py-1 rounded text-xs outline-none border border-input" />
+          {logViewer.searchText && <span className="text-xs text-muted-foreground">{displayLines.length} 条匹配</span>}
+        </div>
+        {/* Virtualized log content */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-auto min-h-[200px] bg-[#0d1117]"
+          onScroll={handleScroll}
+          style={{ userSelect: 'text' }}
+          onContextMenu={(e) => { const s = window.getSelection()?.toString(); if (s) { e.preventDefault(); navigator.clipboard.writeText(s) } }}
+        >
+          {logViewer.loading ? (
+            <div className="p-4 text-xs font-mono text-[#c9d1d9]">Loading...</div>
+          ) : (
+            <div style={{ height: totalHeight, position: 'relative' }}>
+              <pre
+                className="text-xs font-mono text-[#c9d1d9] whitespace-pre-wrap px-4 absolute left-0 right-0"
+                style={{ top: startIdx * LINE_HEIGHT, lineHeight: `${LINE_HEIGHT}px` }}
+              >
+                {logViewer.searchText
+                  ? visibleSlice.map((l: { text: string; idx: number }) => renderLine(l))
+                  : visibleSlice.map((l: { text: string; idx: number }) => l.text + '\n').join('')
+                }
+              </pre>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-1.5 border-t border-border text-[10px] text-muted-foreground shrink-0 flex justify-between">
+          <span>共 {totalLineCount.toLocaleString()} 行{logViewer.searchText ? ` | 匹配 ${displayLines.length.toLocaleString()} 行` : ''} | {formatBytes(logViewer.logs.length)}</span>
+          {totalLineCount > 10000 && <span className="text-green-500">✓ 虚拟滚动已启用</span>}
+        </div>
+      </div>
     </div>
   )
 }
