@@ -26,27 +26,27 @@
     --radius: 0.75rem;
   }
 
-  /* Default Dark (Sleek Anthracite) */
+  /* Default Dark Blue – uses blue as primary accent */
   .dark {
-    --background: 240 6% 6%;
-    --foreground: 0 0% 98%;
-    --card: 240 8% 8%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 8% 8%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 5% 12%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 5% 12%;
-    --muted-foreground: 240 5% 60%;
-    --accent: 240 5% 15%;
-    --accent-foreground: 0 0% 98%;
+    --background: 222 20% 7%;
+    --foreground: 210 40% 98%;
+    --card: 222 22% 9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 22% 9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 20% 7%;
+    --secondary: 222 18% 13%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 222 18% 13%;
+    --muted-foreground: 215 20% 58%;
+    --accent: 222 18% 16%;
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5% 15%;
-    --input: 240 5% 15%;
-    --ring: 240 5% 80%;
+    --border: 222 18% 16%;
+    --input: 222 18% 16%;
+    --ring: 217 91% 60%;
     --radius: 0.75rem;
   }
 
@@ -112,6 +112,75 @@
     --input: 346 25% 16%;
     --ring: 346 80% 60%;
   }
+
+  /* Glass – Transparent frosted glassmorphism */
+  .dark.theme-glass {
+    --background: 220 20% 8%;
+    --foreground: 210 40% 98%;
+    --card: 220 20% 12% / 0.55;
+    --card-foreground: 210 40% 98%;
+    --popover: 220 20% 12% / 0.7;
+    --popover-foreground: 210 40% 98%;
+    --primary: 200 90% 58%;
+    --primary-foreground: 220 20% 6%;
+    --secondary: 220 15% 18% / 0.4;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 220 15% 18% / 0.4;
+    --muted-foreground: 210 15% 62%;
+    --accent: 220 15% 22% / 0.4;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 15% 30% / 0.3;
+    --input: 220 15% 22% / 0.35;
+    --ring: 200 90% 58%;
+  }
+
+  /* Sakura – Cute pastel lavender-pink */
+  .dark.theme-sakura {
+    --background: 280 20% 8%;
+    --foreground: 300 20% 96%;
+    --card: 280 25% 11%;
+    --card-foreground: 300 20% 96%;
+    --popover: 280 25% 11%;
+    --popover-foreground: 300 20% 96%;
+    --primary: 300 70% 65%;
+    --primary-foreground: 280 20% 8%;
+    --secondary: 280 20% 15%;
+    --secondary-foreground: 300 20% 96%;
+    --muted: 280 20% 15%;
+    --muted-foreground: 280 15% 58%;
+    --accent: 290 25% 18%;
+    --accent-foreground: 300 20% 96%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 280 20% 18%;
+    --input: 280 20% 18%;
+    --ring: 300 70% 65%;
+  }
+
+  /* Cyberpunk – Neon orange on dark */
+  .dark.theme-cyberpunk {
+    --background: 240 10% 5%;
+    --foreground: 40 100% 97%;
+    --card: 240 12% 8%;
+    --card-foreground: 40 100% 97%;
+    --popover: 240 12% 8%;
+    --popover-foreground: 40 100% 97%;
+    --primary: 25 95% 55%;
+    --primary-foreground: 240 10% 5%;
+    --secondary: 240 10% 13%;
+    --secondary-foreground: 40 100% 97%;
+    --muted: 240 10% 13%;
+    --muted-foreground: 40 10% 55%;
+    --accent: 240 10% 16%;
+    --accent-foreground: 40 100% 97%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 10% 16%;
+    --input: 240 10% 16%;
+    --ring: 25 95% 55%;
+  }
 }
 
 @layer base {
@@ -135,6 +204,33 @@
     display: flex;
     flex-direction: column;
   }
+}
+
+/* Glass theme — glassmorphism effects */
+.theme-glass .bg-card,
+.theme-glass [class*="bg-card"] {
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+}
+
+.theme-glass .bg-popover,
+.theme-glass [class*="bg-popover"] {
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+}
+
+.theme-glass .dialog-content {
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow:
+    0 30px 60px -15px rgba(0, 0, 0, 0.5),
+    0 0 0 1px hsla(200, 60%, 60%, 0.15),
+    inset 0 1px 0 0 hsla(200, 60%, 80%, 0.08);
+}
+
+.theme-glass .context-menu {
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
 }
 
 /* Focus visible for keyboard navigation */

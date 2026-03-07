@@ -22,7 +22,10 @@ const uiColorThemes = [
   { id: '', name: '默认蓝', preview: '#3b82f6' },
   { id: 'theme-midnight', name: '午夜蓝', preview: '#4466cc' },
   { id: 'theme-forest', name: '森林绿', preview: '#36b37e' },
-  { id: 'theme-rose', name: '玫瑰红', preview: '#e04080' }
+  { id: 'theme-rose', name: '玫瑰红', preview: '#e04080' },
+  { id: 'theme-glass', name: '透明玻璃', preview: 'linear-gradient(135deg, #38bdf8, #818cf8)' },
+  { id: 'theme-sakura', name: '樱花粉', preview: '#c084fc' },
+  { id: 'theme-cyberpunk', name: '赛博朋克', preview: '#f97316' }
 ]
 
 const fontFamilies = [
@@ -153,7 +156,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                             : 'border-border hover:border-primary/50'
                         )}
                       >
-                        <div className="w-4 h-4 rounded-full border border-border" style={{ backgroundColor: ct.preview }} />
+                        <div className="w-4 h-4 rounded-full border border-border" style={{ background: ct.preview }} />
                         <span className="text-xs">{ct.name}</span>
                       </button>
                     ))}
