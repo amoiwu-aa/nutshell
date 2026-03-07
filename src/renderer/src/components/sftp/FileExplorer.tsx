@@ -444,11 +444,10 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
 
     for (const filename of selectedRemote) {
       const remoteFile = remoteFiles.find((f) => f.filename === filename)
-      if (remoteFile && !remoteFile.isDirectory) {
-        const src = `${remotePath}/${filename}`
-        const dest = `${localPath}\\${filename}`
-        startTrackedTransfer('download', dest, src, filename, remoteFile.attrs?.size || remoteFile.size || 0)
-      }
+      if (!remoteFile) continue
+      const src = `${remotePath}/${filename}`
+      const dest = `${localPath}\\${filename}`
+      startTrackedTransfer('download', dest, src, remoteFile.isDirectory ? `📁 ${filename}` : filename, remoteFile.attrs?.size || remoteFile.size || 0)
     }
     setTimeout(() => loadLocalFiles(localPath), 1000)
   }

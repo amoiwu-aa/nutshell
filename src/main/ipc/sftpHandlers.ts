@@ -122,7 +122,7 @@ export function registerSFTPHandlers(): void {
     }
   )
 
-  // Enhanced download with transferId
+  // Enhanced download with transferId — auto-detects directories
   ipcMain.handle(
     'sftp:downloadWithId',
     async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
@@ -134,8 +134,36 @@ export function registerSFTPHandlers(): void {
           const fileName = path.posix.basename(remotePath)
           dest = path.join(downloadsDir, fileName)
         }
-        await sftpManager.download(sessionId, remotePath, dest, transferId)
+
+        // Check if remote path is a directory
+        let isDir = false
+        try {
+          const stat = await sftpManager.stat(sessionId, remotePath)
+          // S_IFDIR = 0o040000 = 16384
+          isDir = (stat.mode & 0o170000) === 0o040000
+        } catch {
+          // If stat fails, assume it's a file
+        }
+
+        if (isDir) {
+          await sftpManager.downloadDir(sessionId, remotePath, dest, transferId)
+        } else {
+          await sftpManager.download(sessionId, remotePath, dest, transferId)
+        }
         return { success: true, localPath: dest }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // Download entire directory recursively
+  ipcMain.handle(
+    'sftp:downloadDir',
+    async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
+      try {
+        await sftpManager.downloadDir(sessionId, remotePath, localPath, transferId)
+        return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
       }
