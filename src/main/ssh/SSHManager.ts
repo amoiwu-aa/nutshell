@@ -255,7 +255,7 @@ class SSHManager {
           this.notifyReconnected(sessionId)
 
           // Re-open shell if needed
-          this.openShell(sessionId).catch(() => {})
+          this.openShell(sessionId).catch(() => { })
           resolve()
         })
 
@@ -283,7 +283,29 @@ class SSHManager {
 
     return new Promise((resolve, reject) => {
       session.client.shell(
-        { term: 'xterm-256color', cols, rows },
+        {
+          term: 'xterm-256color',
+          cols,
+          rows,
+          modes: {
+            // Input modes
+            ICRNL: 1,    // Translate CR to NL on input (fixes double-enter bug)
+            IXON: 1,     // Enable XON/XOFF flow control
+            IXANY: 1,    // Any char restarts output after XOFF
+            IMAXBEL: 1,  // Ring bell on input queue full
+            // Output modes  
+            OPOST: 1,    // Enable output processing
+            ONLCR: 1,    // Translate NL to CR-NL on output
+            // Local modes
+            ISIG: 1,     // Enable signals (INTR, QUIT, SUSP)
+            ICANON: 1,   // Canonical input (line editing)
+            ECHO: 1,     // Echo input characters
+            ECHOE: 1,    // Echo erase as BS-SP-BS
+            ECHOK: 1,    // Echo NL after kill
+            ECHONL: 0,   // Don't echo NL when ECHO is off  
+            IEXTEN: 1,   // Enable extensions
+          }
+        },
         (err, stream) => {
           if (err) {
             reject(err)
