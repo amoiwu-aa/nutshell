@@ -252,23 +252,30 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
         {/* CONTAINERS VIEW */}
         {activeView === 'containers' && (
           <div className="h-full overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '20%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '30%' }} />
+                <col style={{ width: '20%' }} />
+              </colgroup>
               <thead className="sticky top-0 bg-card border-b border-border"><tr className="text-xs text-muted-foreground">
                 <th className="text-left px-4 py-2.5 font-medium">名称</th>
                 <th className="text-left px-4 py-2.5 font-medium">镜像</th>
                 <th className="text-left px-4 py-2.5 font-medium">状态</th>
                 <th className="text-left px-4 py-2.5 font-medium">端口</th>
-                <th className="text-center px-4 py-2.5 font-medium w-56">操作</th>
+                <th className="text-center px-4 py-2.5 font-medium">操作</th>
               </tr></thead>
               <tbody>{filtered(containers).map((c) => (
-                <tr key={c.id} className="border-b border-border/50 hover:bg-accent/50">
+                <tr key={c.id} className="border-b border-border/50 hover:bg-accent/50 align-top">
                   <td className="px-4 py-2.5">
-                    <button onClick={() => handleInspect(c.id)} className="font-medium hover:text-primary transition-colors">{c.name}</button>
+                    <button onClick={() => handleInspect(c.id)} className="font-medium hover:text-primary transition-colors break-all text-left">{c.name}</button>
                     <div className="text-xs text-muted-foreground font-mono">{c.id.substring(0, 12)}</div>
                   </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{c.image}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground break-all">{c.image}</td>
                   <td className="px-4 py-2.5"><span className={stateColor(c.state)}>{c.status}</span></td>
-                  <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">{c.ports || '-'}</td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono break-all">{c.ports || '-'}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-center gap-1">
                       {c.state === 'running' ? (
