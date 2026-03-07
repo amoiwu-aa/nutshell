@@ -108,7 +108,7 @@ function TerminalInstance({
       convertEol: true,
       macOptionIsMeta: true,
       rightClickSelectsWord: true,
-      allowTransparency: isGlass
+      allowTransparency: true
     })
 
     const fitAddon = new FitAddon()
@@ -250,12 +250,17 @@ function TerminalInstance({
     if (!terminal || terminal._core?._isDisposed || (terminal as any)._isDisposed) return
     try {
       const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
-      terminal.options.theme = theme
+      const isGlass = document.documentElement.classList.contains('theme-glass')
+      const termTheme = isGlass
+        ? { ...theme, background: 'rgba(10, 18, 35, 0.35)' }
+        : theme
+
+      terminal.options.theme = termTheme
       terminal.options.fontSize = settings.fontSize
       terminal.options.fontFamily = settings.fontFamily
       fitAddonRef.current?.fit()
     } catch { }
-  }, [settings.terminalTheme, settings.fontSize, settings.fontFamily])
+  }, [settings.terminalTheme, settings.fontSize, settings.fontFamily, (settings as any).colorTheme])
 
   const handleSearch = useCallback(
     (direction: 'next' | 'prev') => {
