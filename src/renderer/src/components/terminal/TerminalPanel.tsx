@@ -95,7 +95,7 @@ function TerminalInstance({
     const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
     const isGlass = document.documentElement.classList.contains('theme-glass')
     const termTheme = isGlass
-      ? { ...theme, background: 'rgba(10, 18, 35, 0.35)' }
+      ? { ...theme, background: 'transparent' }
       : theme
 
     const terminal = new Terminal({
@@ -252,7 +252,7 @@ function TerminalInstance({
       const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
       const isGlass = document.documentElement.classList.contains('theme-glass')
       const termTheme = isGlass
-        ? { ...theme, background: 'rgba(10, 18, 35, 0.35)' }
+        ? { ...theme, background: 'transparent' }
         : theme
 
       terminal.options.theme = termTheme
@@ -273,8 +273,8 @@ function TerminalInstance({
 
   return (
     <div className={cn('flex flex-col relative', className)} style={{
-      backgroundColor: document.documentElement.classList.contains('theme-glass')
-        ? 'transparent'
+      backgroundColor: (settings as any).colorTheme === 'theme-glass'
+        ? 'rgba(15, 25, 45, 0.35)'
         : (terminalThemes[settings.terminalTheme] || terminalThemes.default).background
     }}>
       {showSearch && (
@@ -291,69 +291,73 @@ function TerminalInstance({
       <div ref={containerRef} className="flex-1 xterm-container" onClick={() => setCtxMenu(null)} />
 
       {/* Copy toast */}
-      {copyToast && (
-        <div className="absolute top-2 right-2 px-2.5 py-1 bg-green-600 text-white text-xs rounded shadow-lg animate-in fade-in zoom-in duration-200 pointer-events-none">
-          已复制
-        </div>
-      )}
+      {
+        copyToast && (
+          <div className="absolute top-2 right-2 px-2.5 py-1 bg-green-600 text-white text-xs rounded shadow-lg animate-in fade-in zoom-in duration-200 pointer-events-none">
+            已复制
+          </div>
+        )
+      }
 
       {/* Right-click context menu */}
-      {ctxMenu && (
-        <>
-          <div className="fixed inset-0 z-[90]" onClick={() => setCtxMenu(null)} />
-          <div
-            className="context-menu fixed z-[100] bg-popover text-popover-foreground border border-border rounded-lg shadow-xl py-1 min-w-[140px] select-none"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
-          >
-            <button
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-              onClick={() => {
-                const sel = terminalRef.current?.getSelection()
-                if (sel) {
-                  navigator.clipboard.writeText(sel)
-                  terminalRef.current?.clearSelection()
-                  setCopyToast(true)
-                  setTimeout(() => setCopyToast(false), 1200)
-                }
-                setCtxMenu(null)
-              }}
+      {
+        ctxMenu && (
+          <>
+            <div className="fixed inset-0 z-[90]" onClick={() => setCtxMenu(null)} />
+            <div
+              className="context-menu fixed z-[100] bg-popover text-popover-foreground border border-border rounded-lg shadow-xl py-1 min-w-[140px] select-none"
+              style={{ left: ctxMenu.x, top: ctxMenu.y }}
             >
-              <Copy className="w-3.5 h-3.5 shrink-0" /> 复制
-            </button>
-            <button
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-              onClick={() => {
-                navigator.clipboard.readText().then((text) => {
-                  if (text) window.api.ssh.write(sessionId, text)
-                })
-                setCtxMenu(null)
-              }}
-            >
-              <ClipboardPaste className="w-3.5 h-3.5 shrink-0" /> 粘贴
-            </button>
-            <button
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-              onClick={() => {
-                terminalRef.current?.selectAll()
-                setCtxMenu(null)
-              }}
-            >
-              <TextSelect className="w-3.5 h-3.5 shrink-0" /> 全选
-            </button>
-            <div className="border-t border-border/50 my-1" />
-            <button
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-              onClick={() => {
-                terminalRef.current?.clear()
-                setCtxMenu(null)
-              }}
-            >
-              <Eraser className="w-3.5 h-3.5 shrink-0" /> 清屏
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => {
+                  const sel = terminalRef.current?.getSelection()
+                  if (sel) {
+                    navigator.clipboard.writeText(sel)
+                    terminalRef.current?.clearSelection()
+                    setCopyToast(true)
+                    setTimeout(() => setCopyToast(false), 1200)
+                  }
+                  setCtxMenu(null)
+                }}
+              >
+                <Copy className="w-3.5 h-3.5 shrink-0" /> 复制
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => {
+                  navigator.clipboard.readText().then((text) => {
+                    if (text) window.api.ssh.write(sessionId, text)
+                  })
+                  setCtxMenu(null)
+                }}
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 shrink-0" /> 粘贴
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => {
+                  terminalRef.current?.selectAll()
+                  setCtxMenu(null)
+                }}
+              >
+                <TextSelect className="w-3.5 h-3.5 shrink-0" /> 全选
+              </button>
+              <div className="border-t border-border/50 my-1" />
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => {
+                  terminalRef.current?.clear()
+                  setCtxMenu(null)
+                }}
+              >
+                <Eraser className="w-3.5 h-3.5 shrink-0" /> 清屏
+              </button>
+            </div>
+          </>
+        )
+      }
+    </div >
   )
 }
 
