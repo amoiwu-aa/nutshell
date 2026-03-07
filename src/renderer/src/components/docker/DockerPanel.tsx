@@ -608,7 +608,21 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
   // Right-click context menu handler
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY })
+
+    // Adjust menu position to avoid overflow
+    const menuWidth = 160
+    const menuHeight = 160 // approximate height
+    let x = e.clientX
+    let y = e.clientY
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 10
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 10
+    }
+
+    setCtxMenu({ x, y })
   }, [])
 
   // Render a single line (with highlight if searching)
