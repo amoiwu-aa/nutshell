@@ -93,9 +93,13 @@ function TerminalInstance({
     if (!containerRef.current) return
 
     const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
+    const isGlass = document.documentElement.classList.contains('theme-glass')
+    const termTheme = isGlass
+      ? { ...theme, background: 'rgba(10, 18, 35, 0.35)' }
+      : theme
 
     const terminal = new Terminal({
-      theme,
+      theme: termTheme,
       fontSize: settings.fontSize,
       fontFamily: settings.fontFamily,
       cursorBlink: true,
@@ -103,7 +107,8 @@ function TerminalInstance({
       scrollback: 10000,
       convertEol: true,
       macOptionIsMeta: true,
-      rightClickSelectsWord: true
+      rightClickSelectsWord: true,
+      allowTransparency: isGlass
     })
 
     const fitAddon = new FitAddon()
@@ -262,7 +267,11 @@ function TerminalInstance({
   )
 
   return (
-    <div className={cn('flex flex-col relative', className)} style={{ backgroundColor: (terminalThemes[settings.terminalTheme] || terminalThemes.default).background }}>
+    <div className={cn('flex flex-col relative', className)} style={{
+      backgroundColor: document.documentElement.classList.contains('theme-glass')
+        ? 'transparent'
+        : (terminalThemes[settings.terminalTheme] || terminalThemes.default).background
+    }}>
       {showSearch && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-card border-b border-border shrink-0">
           <Search className="w-4 h-4 text-muted-foreground" />

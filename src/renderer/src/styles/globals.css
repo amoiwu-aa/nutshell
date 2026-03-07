@@ -290,6 +290,20 @@
   box-shadow: 0 0 12px hsla(200, 90%, 58%, 0.3);
 }
 
+/* Step 11: Terminal (xterm.js) transparency */
+.theme-glass .xterm-container {
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+}
+
+.theme-glass .xterm-viewport {
+  background-color: transparent !important;
+}
+
+.theme-glass .xterm-screen {
+  background-color: transparent !important;
+}
+
 /* Focus visible for keyboard navigation */
 :focus-visible {
   outline: 2px solid hsl(var(--ring));
