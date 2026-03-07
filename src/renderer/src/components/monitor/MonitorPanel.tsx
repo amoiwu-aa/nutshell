@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Cpu, MemoryStick, HardDrive, Network, Activity, ArrowUp, ArrowDown,
-  Server, Copy, ChevronLeft, ChevronRight as ChevronRightIcon, ExternalLink
+  Server, Copy, Check, ChevronLeft, ChevronRight as ChevronRightIcon, ExternalLink
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip,
@@ -44,6 +44,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
   const [processTab, setProcessTab] = useState<'mem' | 'cpu'>('mem')
   const [collapsed, setCollapsed] = useState(false)
   const [selectedInterface, setSelectedInterface] = useState<string>('all')
+  const [copied, setCopied] = useState(false)
 
   // Buffer to batch monitor updates per animation frame
   const pendingDataRef = useRef<MonitorData | null>(null)
@@ -98,11 +99,40 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
     return { time: i, networkRx: iface?.rx || 0, networkTx: iface?.tx || 0 }
   }), [history, selectedInterface])
 
-  const handleCopyIP = useCallback(() => {
-    if (sysInfo?.hostname) {
-      navigator.clipboard.writeText(sysInfo.hostname)
+  // Copy ALL server info as formatted text
+  const handleCopyAll = useCallback(() => {
+    const lines: string[] = []
+    if (sysInfo) {
+      lines.push(`主机名: ${sysInfo.hostname}`)
+      lines.push(`系统: ${sysInfo.os}`)
+      lines.push(`内核: ${sysInfo.kernel}`)
+      lines.push(`架构: ${sysInfo.arch}`)
+      lines.push(`CPU 核心: ${sysInfo.cpuCores}`)
     }
-  }, [sysInfo])
+    if (currentData) {
+      lines.push(`运行时间: ${currentData.uptime || 'N/A'}`)
+      lines.push(`负载: ${currentData.loadAvg?.map(v => v?.toFixed(2)).join(', ') || 'N/A'}`)
+      lines.push('')
+      lines.push(`CPU: ${currentData.cpu}%`)
+      lines.push(`内存: ${formatBytes(currentData.memory.used)} / ${formatBytes(currentData.memory.total)} (${currentData.memory.percent}%)`)
+      if (currentData.swap.total > 0) {
+        lines.push(`交换: ${formatBytes(currentData.swap.used)} / ${formatBytes(currentData.swap.total)} (${currentData.swap.percent}%)`)
+      }
+      if (currentData.network) {
+        lines.push(`网络: ↓${formatBytesPerSec(currentData.network.rx)} ↑${formatBytesPerSec(currentData.network.tx)}`)
+      }
+      if (currentData.disks?.length) {
+        lines.push('')
+        lines.push('磁盘:')
+        for (const d of currentData.disks) {
+          lines.push(`  ${d.mountPoint}: 剩余 ${formatBytes(d.total - d.used)} / ${formatBytes(d.total)} (已用 ${d.percent}%)`)
+        }
+      }
+    }
+    navigator.clipboard.writeText(lines.join('\n'))
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }, [sysInfo, currentData])
 
   const handleOpenDetailed = useCallback(() => {
     window.dispatchEvent(new CustomEvent('app:openDetailedMonitor', {
@@ -147,7 +177,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5">
         {/* Loading state */}
         {!currentData && (
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
@@ -158,23 +188,32 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
 
         {currentData && (
           <>
-            {/* System Info */}
+            {/* System Info Card */}
             {sysInfo && (
-              <div className="space-y-1.5">
+              <div className="rounded-lg bg-secondary/40 border border-border/50 px-2.5 py-2 space-y-1">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Server className="w-3 h-3 text-primary" />
-                    <span className="text-xs font-medium truncate">{sysInfo.hostname}</span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Server className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span className="text-xs font-semibold truncate">{sysInfo.hostname}</span>
                   </div>
-                  <button onClick={handleCopyIP} className="p-0.5 hover:bg-accent rounded" title="复制">
-                    <Copy className="w-3 h-3 text-muted-foreground" />
+                  <button
+                    onClick={handleCopyAll}
+                    className={cn(
+                      'p-1 rounded transition-all shrink-0',
+                      copied ? 'bg-green-500/20 text-green-500' : 'hover:bg-accent text-muted-foreground'
+                    )}
+                    title="复制所有服务器信息"
+                  >
+                    {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                   </button>
                 </div>
                 <div className="text-[10px] text-muted-foreground leading-relaxed">
                   {sysInfo.os} | {sysInfo.cpuCores}核 {sysInfo.arch}
                 </div>
-                <div className="text-[10px] text-muted-foreground">
-                  运行 {currentData.uptime} | 负载 {currentData.loadAvg?.map(v => v?.toFixed(2)).join(', ')}
+                <div className="text-[10px] text-muted-foreground flex items-center gap-1 flex-wrap">
+                  <span>⏱ {currentData.uptime}</span>
+                  <span className="text-border">·</span>
+                  <span>负载 {currentData.loadAvg?.map(v => v?.toFixed(2)).join(' / ')}</span>
                 </div>
               </div>
             )}
@@ -197,17 +236,16 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
               color="#10b981"
             />
 
-            {/* Swap Bar */}
-            <MetricBar
-              icon={MemoryStick}
-              label="交换"
-              percent={currentData.swap.percent}
-              detail={currentData.swap.total > 0
-                ? `${formatBytes(currentData.swap.used)} / ${formatBytes(currentData.swap.total)}`
-                : '未启用'
-              }
-              color="#f97316"
-            />
+            {/* Swap Bar - only show when enabled */}
+            {currentData.swap.total > 0 && (
+              <MetricBar
+                icon={MemoryStick}
+                label="交换"
+                percent={currentData.swap.percent}
+                detail={`${formatBytes(currentData.swap.used)} / ${formatBytes(currentData.swap.total)}`}
+                color="#f97316"
+              />
+            )}
 
             {/* Process Tabs */}
             <div>
@@ -334,26 +372,29 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
                   <HardDrive className="w-3 h-3 text-yellow-500" />
                   <span className="text-[10px] font-medium">磁盘</span>
                 </div>
-                <div className="space-y-1.5 max-h-[120px] overflow-y-auto">
-                  {currentData.disks.map((d, i) => (
-                    <div key={i} className="text-[10px]">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="truncate max-w-[120px]" title={d.mountPoint}>{d.mountPoint}</span>
-                        <span className="text-muted-foreground shrink-0 ml-1">
-                          剩余 {formatBytes(d.total - d.used)}/{formatBytes(d.total)}
-                        </span>
+                <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                  {currentData.disks.map((d, i) => {
+                    const freePercent = Math.max(0, 100 - Math.min(d.percent, 100))
+                    return (
+                      <div key={i} className="text-[10px]">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="truncate max-w-[100px] font-medium" title={d.mountPoint}>{d.mountPoint}</span>
+                          <span className="text-muted-foreground shrink-0 ml-1">
+                            剩余 {formatBytes(d.total - d.used)}/{formatBytes(d.total)}
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${freePercent}%`,
+                              backgroundColor: d.percent > 90 ? '#ef4444' : d.percent > 70 ? '#f59e0b' : '#10b981'
+                            }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.max(0, 100 - Math.min(d.percent, 100))}%`,
-                            backgroundColor: d.percent > 90 ? '#ef4444' : d.percent > 70 ? '#f59e0b' : '#10b981'
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -374,15 +415,17 @@ function MetricBar({ icon: Icon, label, percent, detail, color }: {
           <Icon className="w-3 h-3" style={{ color }} />
           <span className="text-[10px] font-medium">{label}</span>
         </div>
-        <span className="text-[10px] font-mono font-bold" style={{ color }}>{percent}%</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground">{detail}</span>
+          <span className="text-[10px] font-mono font-bold" style={{ color }}>{percent}%</span>
+        </div>
       </div>
-      <div className="h-2 bg-secondary rounded-full overflow-hidden mb-0.5">
+      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: color }}
         />
       </div>
-      <div className="text-[10px] text-muted-foreground">{detail}</div>
     </div>
   )
 }
