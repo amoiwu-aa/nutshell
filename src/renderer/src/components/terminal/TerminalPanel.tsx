@@ -108,6 +108,9 @@ function TerminalInstance({
 
     const fitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
+      // Prevent opening link when user is just selecting text to copy
+      if (terminal.hasSelection()) return
+
       // Ensure http/https links open in system browser via Electron's shell
       if (uri.startsWith('http://') || uri.startsWith('https://')) {
         window.open(uri, '_blank')
