@@ -70,6 +70,7 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
   const isActive = transfer.status === 'active'
   const isCompleted = transfer.status === 'completed'
   const isFailed = transfer.status === 'failed' || transfer.status === 'cancelled'
+  const isQueued = transfer.status === 'queued'
 
   return (
     <div className="px-3 py-2 border-b border-border/30 hover:bg-accent/30 transition-colors">
@@ -85,12 +86,22 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
         {/* Filename */}
         <span className="text-xs truncate flex-1" title={transfer.remotePath}>
           {transfer.filename}
+          {transfer.currentFile && (
+            <span className="ml-2 pr-1 text-[10px] text-muted-foreground" title={transfer.currentFile}>
+              {transfer.currentFile}
+            </span>
+          )}
         </span>
 
         {/* Status info */}
         {isActive && (
           <span className="text-[10px] text-muted-foreground shrink-0">
             {percent}% | {formatBytesPerSec(transfer.speed)} | ETA {formatETA(transfer.eta)}
+          </span>
+        )}
+        {isQueued && (
+          <span className="text-[10px] text-muted-foreground shrink-0">
+            排队中...
           </span>
         )}
         {isCompleted && (
@@ -108,7 +119,7 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
 
         {/* Action buttons */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {isActive && (
+          {(isActive || isQueued) && (
             <button onClick={handleCancel} className="p-0.5 hover:bg-accent rounded transition-colors" title="取消">
               <X className="w-3 h-3 text-muted-foreground" />
             </button>

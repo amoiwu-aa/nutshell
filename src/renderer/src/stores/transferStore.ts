@@ -15,6 +15,7 @@ export interface TransferItem {
   status: TransferStatus
   speed: number
   eta: number
+  currentFile?: string
   error?: string
   startedAt: number
   completedAt?: number
@@ -47,7 +48,7 @@ interface TransferState {
   transfers: TransferItem[]
   addTransfer: (transfer: TransferItem) => void
   enqueueTransfer: (transfer: TransferItem, executor: () => Promise<any>) => void
-  updateProgress: (id: string, transferred: number, total: number) => void
+  updateProgress: (id: string, transferred: number, total: number, currentFile?: string) => void
   setStatus: (id: string, status: TransferStatus, error?: string) => void
   removeTransfer: (id: string) => void
   clearCompleted: () => void
@@ -127,7 +128,7 @@ export const useTransferStore = create<TransferState>((set, get) => ({
     processQueue()
   },
 
-  updateProgress: (id, transferred, total) => {
+  updateProgress: (id, transferred, total, currentFile?) => {
     const speed = calculateSpeed(id, transferred)
     set((state) => ({
       transfers: state.transfers.map((t) => {
@@ -144,6 +145,7 @@ export const useTransferStore = create<TransferState>((set, get) => ({
           totalSize: total,
           speed: newSpeed,
           eta,
+          currentFile: currentFile || t.currentFile,
           status: 'active' as TransferStatus
         }
       })

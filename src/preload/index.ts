@@ -110,19 +110,22 @@ const api = {
       ipcRenderer.invoke('sftp:uploadWithId', sessionId, localPath, remotePath, transferId, resumeOffset),
     downloadWithId: (sessionId: string, remotePath: string, localPath: string, transferId: string, resumeOffset?: number) =>
       ipcRenderer.invoke('sftp:downloadWithId', sessionId, remotePath, localPath, transferId, resumeOffset),
+    downloadDir: (sessionId: string, remotePath: string, localPath: string, transferId: string) =>
+      ipcRenderer.invoke('sftp:downloadDir', sessionId, remotePath, localPath, transferId),
     cancelTransfer: (transferId: string) =>
       ipcRenderer.invoke('sftp:cancelTransfer', transferId),
     getRemoteFileSize: (sessionId: string, remotePath: string) =>
       ipcRenderer.invoke('sftp:getRemoteFileSize', sessionId, remotePath),
     selectDirectory: (title?: string) =>
       ipcRenderer.invoke('sftp:selectDirectory', title),
-    onProgress: (callback: (id: string, transferred: number, total: number) => void) => {
+    onProgress: (callback: (id: string, transferred: number, total: number, currentFile?: string) => void) => {
       const handler = (
         _event: Electron.IpcRendererEvent,
         id: string,
         transferred: number,
-        total: number
-      ) => callback(id, transferred, total)
+        total: number,
+        currentFile?: string
+      ) => callback(id, transferred, total, currentFile)
       ipcRenderer.on('sftp:progress', handler)
       return () => ipcRenderer.removeListener('sftp:progress', handler)
     }
@@ -155,6 +158,7 @@ const api = {
   // System operations
   system: {
     openLocalFile: (path: string) => ipcRenderer.invoke('system:openLocalFile', path),
+    showItemInFolder: (path: string) => ipcRenderer.invoke('system:showItemInFolder', path),
     watchLocalFile: (sessionId: string, localPath: string, remotePath: string) => ipcRenderer.invoke('system:watchLocalFile', sessionId, localPath, remotePath),
     unwatchLocalFile: (localPath: string) => ipcRenderer.invoke('system:unwatchLocalFile', localPath),
     getTempDir: () => ipcRenderer.invoke('system:getTempDir')

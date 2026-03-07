@@ -177,7 +177,7 @@ class SFTPManager {
         chunkSize: 64 * 1024, // SSH2 max chunk is usually ~32-64k for protocol payload. Concurrency is key.
         step: (transferred: number, chunk: number, total: number) => {
           if (this.activeTransfers.has(id)) {
-            this.notifyProgress(id, transferred, total)
+            this.notifyProgress(id, transferred, total, path.basename(localPath))
           }
         }
       }, (err) => {
@@ -237,7 +237,7 @@ class SFTPManager {
         step: (transferred: number, chunk: number, total: number) => {
           lastActivity = Date.now()
           if (this.activeTransfers.has(id)) {
-            this.notifyProgress(id, transferred, total)
+            this.notifyProgress(id, transferred, total, path.basename(safePath))
           }
         }
       }, (err) => {
@@ -323,7 +323,7 @@ class SFTPManager {
               step: (transferred: number, _chunk: number, _total: number) => {
                 lastActivity = Date.now()
                 if (this.activeTransfers.has(id)) {
-                  this.notifyProgress(id, totalTransferred + transferred, totalSize)
+                  this.notifyProgress(id, totalTransferred + transferred, totalSize, path.basename(file.remote))
                 }
               }
             }, (err) => {
@@ -361,7 +361,7 @@ class SFTPManager {
       }
 
       totalTransferred += file.size
-      this.notifyProgress(id, totalTransferred, totalSize)
+      this.notifyProgress(id, totalTransferred, totalSize, path.basename(file.remote))
     }
 
     this.activeTransfers.delete(id)
@@ -651,16 +651,16 @@ class SFTPManager {
   }
 
   private _lastProgressTime: Map<string, number> = new Map()
-  private _pendingProgress: Map<string, { transferred: number; total: number }> = new Map()
+  private _pendingProgress: Map<string, { transferred: number; total: number; currentFile?: string }> = new Map()
 
-  private notifyProgress(id: string, transferred: number, total: number): void {
+  private notifyProgress(id: string, transferred: number, total: number, currentFile?: string): void {
     const now = Date.now()
     const last = this._lastProgressTime.get(id) || 0
     const isComplete = transferred >= total
 
     if (!isComplete && now - last < 200) {
       // Throttle: queue this update, it will be sent on next allowed tick
-      this._pendingProgress.set(id, { transferred, total })
+      this._pendingProgress.set(id, { transferred, total, currentFile })
       if (!this._lastProgressTime.has(id + '_timer')) {
         this._lastProgressTime.set(id + '_timer', 1)
         setTimeout(() => {
@@ -668,7 +668,7 @@ class SFTPManager {
           const pending = this._pendingProgress.get(id)
           if (pending) {
             this._pendingProgress.delete(id)
-            this.notifyProgress(id, pending.transferred, pending.total)
+            this.notifyProgress(id, pending.transferred, pending.total, pending.currentFile)
           }
         }, 200)
       }
@@ -678,7 +678,7 @@ class SFTPManager {
     this._lastProgressTime.set(id, now)
     this._pendingProgress.delete(id)
     for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('sftp:progress', id, transferred, total)
+      win.webContents.send('sftp:progress', id, transferred, total, currentFile)
     }
   }
 }
