@@ -1,5 +1,5 @@
 import React from 'react'
-import { Upload, Download, X, Check, RotateCcw, AlertCircle } from 'lucide-react'
+import { Upload, Download, X, Check, RotateCcw, AlertCircle, FolderOpen } from 'lucide-react'
 import { formatBytes, formatBytesPerSec } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
 
@@ -102,7 +102,7 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
         )}
         {isFailed && (
           <span className="text-[10px] text-destructive shrink-0 max-w-[160px] truncate" title={transfer.error}>
-            {transfer.error || transfer.status === 'cancelled' ? '已取消' : '失败'}
+            {transfer.error ? transfer.error : transfer.status === 'cancelled' ? '已取消' : '失败'}
           </span>
         )}
 
@@ -132,6 +132,15 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
                 <AlertCircle className="w-3 h-3 text-muted-foreground" />
               </button>
             </>
+          )}
+          {isCompleted && transfer.direction === 'download' && (
+            <button
+              onClick={() => window.api.system.showItemInFolder(transfer.localPath)}
+              className="p-0.5 hover:bg-accent rounded transition-colors"
+              title="打开所在文件夹"
+            >
+              <FolderOpen className="w-3 h-3 text-primary" />
+            </button>
           )}
           {(isCompleted || isFailed) && (
             <button

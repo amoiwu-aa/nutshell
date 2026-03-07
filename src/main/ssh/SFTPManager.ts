@@ -253,6 +253,160 @@ class SFTPManager {
     })
   }
 
+  async downloadDir(
+    sessionId: string,
+    remotePath: string,
+    localPath: string,
+    transferId?: string
+  ): Promise<void> {
+    const safePath = sanitizePath(remotePath)
+    let sftp = await this.getFreshSFTP(sessionId)
+    const id = transferId || `${Date.now()}`
+
+    // First, scan the entire directory tree to get total size
+    const fileList: { remote: string; local: string; size: number }[] = []
+    await this._scanDir(sftp, safePath, localPath, fileList, 0)
+
+    const totalSize = fileList.reduce((sum, f) => sum + f.size, 0)
+    let totalTransferred = 0
+    let cancelled = false
+
+    // Always create the target directory (even if remote dir is empty)
+    if (!fs.existsSync(localPath)) {
+      fs.mkdirSync(localPath, { recursive: true })
+    }
+
+    console.log(`[SFTP] Downloading directory: ${safePath} -> ${localPath} (${fileList.length} files, ${totalSize} bytes)`)
+
+    this.activeTransfers.set(id, {
+      abort: () => {
+        cancelled = true
+        this.activeTransfers.delete(id)
+      }
+    })
+
+    this.notifyProgress(id, 0, totalSize)
+
+    const MAX_RETRIES = 3
+
+    for (const file of fileList) {
+      if (cancelled || !this.activeTransfers.has(id)) {
+        throw new Error('Transfer cancelled')
+      }
+
+      // Ensure local directory exists
+      const dir = path.dirname(file.local)
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+
+      // Download file with retry
+      let lastErr: Error | null = null
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        if (cancelled || !this.activeTransfers.has(id)) {
+          throw new Error('Transfer cancelled')
+        }
+
+        try {
+          await new Promise<void>((resolve, reject) => {
+            let lastActivity = Date.now()
+            const inactivityTimer = setInterval(() => {
+              if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
+                clearInterval(inactivityTimer)
+                reject(new Error(`File download timed out: ${file.remote}`))
+              }
+            }, 10000)
+
+            sftp.fastGet(file.remote, file.local, {
+              concurrency: 25,
+              chunkSize: 64 * 1024,
+              step: (transferred: number, _chunk: number, _total: number) => {
+                lastActivity = Date.now()
+                if (this.activeTransfers.has(id)) {
+                  this.notifyProgress(id, totalTransferred + transferred, totalSize)
+                }
+              }
+            }, (err) => {
+              clearInterval(inactivityTimer)
+              if (err) reject(err)
+              else resolve()
+            })
+          })
+          // Success — break out of retry loop
+          lastErr = null
+          break
+        } catch (err: any) {
+          lastErr = err
+          if (cancelled || !this.activeTransfers.has(id)) {
+            throw new Error('Transfer cancelled')
+          }
+          console.warn(`[SFTP] File download failed (attempt ${attempt + 1}/${MAX_RETRIES}): ${file.remote} — ${err?.message}`)
+          if (attempt < MAX_RETRIES - 1) {
+            // Wait before retry with exponential backoff
+            await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
+            // Try to get a fresh SFTP session in case the channel died
+            try {
+              this.closeSFTP(sessionId)
+              sftp = await this.getSFTP(sessionId)
+            } catch {
+              // If we can't get a new session, the next attempt will fail anyway
+            }
+          }
+        }
+      }
+
+      if (lastErr) {
+        this.activeTransfers.delete(id)
+        throw lastErr
+      }
+
+      totalTransferred += file.size
+      this.notifyProgress(id, totalTransferred, totalSize)
+    }
+
+    this.activeTransfers.delete(id)
+    console.log(`[SFTP] Directory download complete: ${safePath} -> ${localPath}`)
+  }
+
+  private async _scanDir(
+    sftp: SFTPWrapper,
+    remotePath: string,
+    localPath: string,
+    result: { remote: string; local: string; size: number }[],
+    depth: number
+  ): Promise<void> {
+    if (depth > 50) throw new Error('Directory nesting too deep')
+
+    const items = await new Promise<any[]>((resolve, reject) => {
+      sftp.readdir(remotePath, (err, list) => {
+        if (err) reject(err)
+        else resolve(list || [])
+      })
+    })
+
+    for (const item of items) {
+      if (item.filename === '.' || item.filename === '..') {
+        continue
+      }
+
+      const remoteChild = `${remotePath}/${item.filename}`
+      const localChild = path.join(localPath, item.filename)
+      const isDir = (item.attrs.mode & 0o40000) !== 0
+      const isSymlink = item.longname.startsWith('l') || (item.attrs.mode & 0o120000) === 0o120000
+
+      if (isSymlink) {
+        // Skip symlinks to avoid infinite loops and downloading directory symlinks as files
+        continue
+      }
+
+      if (isDir) {
+        await this._scanDir(sftp, remoteChild, localChild, result, depth + 1)
+      } else {
+        result.push({ remote: remoteChild, local: localChild, size: item.attrs.size || 0 })
+      }
+    }
+  }
+
   async mkdir(sessionId: string, remotePath: string): Promise<void> {
     const safePath = sanitizePath(remotePath)
     const sftp = await this.getSFTP(sessionId)
