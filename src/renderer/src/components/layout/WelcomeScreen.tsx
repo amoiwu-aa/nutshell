@@ -16,7 +16,7 @@ export function WelcomeScreen() {
           </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-foreground mb-2">SuperShell</h1>
+        <h1 className="text-3xl font-bold text-foreground mb-2">Nutshell</h1>
         <p className="text-muted-foreground mb-8">
           高级 SSH 远程管理工具 - 更安全、更高效、更现代
         </p>

@@ -1,9 +1,9 @@
 {
-  "name": "supershell",
+  "name": "nutshell",
   "version": "1.0.0",
-  "description": "SuperShell - Advanced SSH Remote Management Tool",
+  "description": "Nutshell - Advanced SSH Remote Management Tool",
   "main": "./out/main/index.js",
-  "author": "SuperShell Team",
+  "author": "Nutshell Team",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -58,8 +58,8 @@
     "vite": "^6.0.0"
   },
   "build": {
-    "appId": "com.supershell.app",
-    "productName": "SuperShell",
+    "appId": "com.nutshell.app",
+    "productName": "Nutshell",
     "directories": {
       "buildResources": "build"
     },

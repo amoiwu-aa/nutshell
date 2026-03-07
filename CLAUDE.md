@@ -16,7 +16,7 @@ No test runner or linter is configured.
 
 ## Architecture
 
-SuperShell is an Electron 33 + React 19 + TypeScript SSH remote management tool. It follows the standard Electron three-process model:
+Nutshell is an Electron 33 + React 19 + TypeScript SSH remote management tool. It follows the standard Electron three-process model:
 
 ### Process Boundaries
 

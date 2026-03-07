@@ -13,7 +13,7 @@ interface ChatMessage {
   content: string
 }
 
-const SYSTEM_PROMPT = `你是一个 Linux 服务器运维专家 AI 助手，内嵌在 SSH 远程管理工具 SuperShell 中。
+const SYSTEM_PROMPT = `你是一个 Linux 服务器运维专家 AI 助手，内嵌在 SSH 远程管理工具 Nutshell 中。
 你的职责：
 1. 根据用户的自然语言描述生成准确的 Linux 命令
 2. 解释用户不理解的命令和输出

@@ -131,7 +131,7 @@ class ConfigStore {
 
   constructor() {
     this.store = new Store<StoreSchema>({
-      name: 'supershell-config',
+      name: 'nutshell-config',
       defaults: {
         connections: [],
         snippets: [],

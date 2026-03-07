@@ -106,7 +106,7 @@ export function ScriptWorkshop({ isOpen, onClose, sessionId }: ScriptWorkshopPro
 
   const handleExecuteInTerminal = () => {
     if (!sessionId || !currentState.code) return
-    const tempPath = '/tmp/supershell_script_' + Date.now() + '.sh'
+    const tempPath = '/tmp/nutshell_script_' + Date.now() + '.sh'
     const escapedContent = currentState.code.replace(/'/g, "'\\''")
     window.api.ssh.write(sessionId, `echo '${escapedContent}' > ${tempPath} && chmod +x ${tempPath} && bash ${tempPath} ; rm -f ${tempPath}\n`)
     setExecResult('已发送到终端')
@@ -121,7 +121,7 @@ export function ScriptWorkshop({ isOpen, onClose, sessionId }: ScriptWorkshopPro
 
   const formatTime = (ts: number) => {
     const d = new Date(ts)
-    return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
   }
 
   const typeLabel = (id: string) => scriptTypes.find((t) => t.id === id)?.label || id

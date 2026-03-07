@@ -40,7 +40,7 @@ export function TitleBar() {
         {/* App icon and title */}
         <div className="flex items-center px-3 gap-2 no-drag">
           <Terminal className="w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">SuperShell</span>
+          <span className="text-sm font-semibold text-foreground">Nutshell</span>
         </div>
 
         {/* Window size preset button */}

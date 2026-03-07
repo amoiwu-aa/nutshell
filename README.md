@@ -1,4 +1,4 @@
-# SuperShell - 高级 SSH 远程管理工具
+# Nutshell - 高级 SSH 远程管理工具
 
 一个使用 Electron + React + TypeScript 构建的现代化 SSH 远程管理工具，比 FinalShell 更安全、更高效、更美观。
 

@@ -257,7 +257,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             {activeSection === 'about' && (
               <div className="space-y-6">
                 <div className="text-center py-6">
-                  <h3 className="text-2xl font-bold mb-1">SuperShell</h3>
+                  <h3 className="text-2xl font-bold mb-1">Nutshell</h3>
                   <p className="text-muted-foreground mb-1">版本 1.0.0</p>
                   <p className="text-sm text-muted-foreground">
                     高级 SSH 远程管理工具

@@ -290,7 +290,7 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
     try {
       const r = await window.api.config.getConversations(rootPath)
       if (r.success) setConversations(r.conversations || [])
-    } catch {}
+    } catch { }
   }
 
   const scanProject = async () => {
@@ -298,7 +298,7 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
     try {
       const r = await window.api.workspace.getProjectSummary(sessionId, rootPath)
       if (r.success) { setProjectSummary(r.summary); setProjectScanned(true) }
-    } catch {}
+    } catch { }
     setScanning(false)
   }
 
@@ -318,7 +318,7 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
         setMessages(r.conversation.messages.map((m: any) => ({ ...m, id: m.id || `${m.timestamp}-${Math.random()}` })))
         setView('chat')
       }
-    } catch {}
+    } catch { }
   }, [rootPath])
 
   const saveCurrentConversation = useCallback(async (msgs?: Message[]) => {
@@ -393,7 +393,7 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
     try {
       const r = await window.api.sftp.readFile(sessionId, activePlanPath)
       if (r.success) setPlanTodos(parsePlanTodos(r.content))
-    } catch {}
+    } catch { }
   }, [activePlanPath, sessionId, parsePlanTodos])
 
   // Refresh plan todos periodically when plan is active
@@ -489,7 +489,7 @@ ${planContent}
         try {
           const planR = await window.api.sftp.readFile(sessionId, activePlanPath)
           if (planR.success) ctx += `\n[活跃计划: ${activePlanPath}]\n${planR.content.substring(0, 2000)}\n`
-        } catch {}
+        } catch { }
       }
 
       if (mode === 'agent') {
@@ -542,12 +542,12 @@ ${planContent}
             if (todos.length > 0) {
               try {
                 // Create plans directory
-                await window.api.workspace.agentRunCommand(sessionId, rootPath, 'mkdir -p .supershell/plans')
+                await window.api.workspace.agentRunCommand(sessionId, rootPath, 'mkdir -p .nutshell/plans')
                 // Generate filename
                 const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 16)
                 const titleSlug = userInput.substring(0, 20).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_')
                 const planFileName = `${ts}-${titleSlug}.md`
-                const planPath = `${rootPath}/.supershell/plans/${planFileName}`
+                const planPath = `${rootPath}/.nutshell/plans/${planFileName}`
                 // Write plan file
                 await window.api.sftp.writeFile(sessionId, planPath, r.content)
                 // Set as active plan
@@ -662,51 +662,51 @@ ${planContent}
         </div>
       )}
       {changes.map((pc) => {
-      const relPath = pc.path.startsWith(rootPath) ? pc.path.substring(rootPath.length).replace(/^\//, '') : pc.path
-      const isNew = !pc.originalContent
-      return (
-        <div key={pc.id} className="mt-1.5 rounded overflow-hidden" style={{
-          border: `1px solid ${pc.status === 'accepted' ? '#3fb950' : pc.status === 'rejected' ? '#f85149' : '#3c3c3c'}`,
-          opacity: pc.status === 'rejected' ? 0.5 : 1
-        }}>
-          {/* File header */}
-          <div className="flex items-center gap-2 px-2.5 py-1.5" style={{ background: pc.status === 'accepted' ? '#3fb95011' : pc.status === 'rejected' ? '#f8514911' : '#2d2d2d' }}>
-            <Edit className="w-3.5 h-3.5 shrink-0" style={{ color: pc.status === 'accepted' ? '#3fb950' : '#d4b37b' }} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-mono truncate" style={{ color: '#cccccc' }}>{relPath}</div>
-              <div className="flex items-center gap-2 text-[11px]">
-                {isNew && <span style={{ color: '#3fb950' }}>新文件</span>}
-                {pc.addedLines > 0 && <span style={{ color: '#3fb950' }}>+{pc.addedLines}</span>}
-                {pc.removedLines > 0 && <span style={{ color: '#f85149' }}>-{pc.removedLines}</span>}
-                {!isNew && pc.addedLines === 0 && pc.removedLines === 0 && <span style={{ color: '#969696' }}>无变化</span>}
+        const relPath = pc.path.startsWith(rootPath) ? pc.path.substring(rootPath.length).replace(/^\//, '') : pc.path
+        const isNew = !pc.originalContent
+        return (
+          <div key={pc.id} className="mt-1.5 rounded overflow-hidden" style={{
+            border: `1px solid ${pc.status === 'accepted' ? '#3fb950' : pc.status === 'rejected' ? '#f85149' : '#3c3c3c'}`,
+            opacity: pc.status === 'rejected' ? 0.5 : 1
+          }}>
+            {/* File header */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5" style={{ background: pc.status === 'accepted' ? '#3fb95011' : pc.status === 'rejected' ? '#f8514911' : '#2d2d2d' }}>
+              <Edit className="w-3.5 h-3.5 shrink-0" style={{ color: pc.status === 'accepted' ? '#3fb950' : '#d4b37b' }} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-mono truncate" style={{ color: '#cccccc' }}>{relPath}</div>
+                <div className="flex items-center gap-2 text-[11px]">
+                  {isNew && <span style={{ color: '#3fb950' }}>新文件</span>}
+                  {pc.addedLines > 0 && <span style={{ color: '#3fb950' }}>+{pc.addedLines}</span>}
+                  {pc.removedLines > 0 && <span style={{ color: '#f85149' }}>-{pc.removedLines}</span>}
+                  {!isNew && pc.addedLines === 0 && pc.removedLines === 0 && <span style={{ color: '#969696' }}>无变化</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {/* View diff - always available */}
+                <button onClick={() => reviewChange(pc)} className="px-2 py-0.5 rounded text-[11px] hover:bg-[#3c3c3c]" style={{ color: '#58a6ff' }} title="查看差异">
+                  <GitCompare className="w-3 h-3 inline mr-0.5" />查看
+                </button>
+                {/* Open file in editor */}
+                <button onClick={() => onOpenFile(pc.path)} className="px-2 py-0.5 rounded text-[11px] hover:bg-[#3c3c3c]" style={{ color: '#969696' }} title="打开文件">
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+                {pc.status === 'pending' && (
+                  <>
+                    <button onClick={() => acceptChange(pc.id)} className="p-1 rounded hover:bg-[#2ea04344]" title="接受更改">
+                      <CheckCircle className="w-3.5 h-3.5" style={{ color: '#3fb950' }} />
+                    </button>
+                    <button onClick={() => rejectChange(pc.id)} className="p-1 rounded hover:bg-[#f8514944]" title="拒绝更改">
+                      <XCircle className="w-3.5 h-3.5" style={{ color: '#f85149' }} />
+                    </button>
+                  </>
+                )}
+                {pc.status === 'accepted' && <span className="text-[11px] flex items-center gap-0.5 px-1" style={{ color: '#3fb950' }}><Check className="w-3 h-3" />已接受</span>}
+                {pc.status === 'rejected' && <span className="text-[11px] px-1 line-through" style={{ color: '#f85149' }}>已拒绝</span>}
               </div>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {/* View diff - always available */}
-              <button onClick={() => reviewChange(pc)} className="px-2 py-0.5 rounded text-[11px] hover:bg-[#3c3c3c]" style={{ color: '#58a6ff' }} title="查看差异">
-                <GitCompare className="w-3 h-3 inline mr-0.5" />查看
-              </button>
-              {/* Open file in editor */}
-              <button onClick={() => onOpenFile(pc.path)} className="px-2 py-0.5 rounded text-[11px] hover:bg-[#3c3c3c]" style={{ color: '#969696' }} title="打开文件">
-                <ExternalLink className="w-3 h-3" />
-              </button>
-              {pc.status === 'pending' && (
-                <>
-                  <button onClick={() => acceptChange(pc.id)} className="p-1 rounded hover:bg-[#2ea04344]" title="接受更改">
-                    <CheckCircle className="w-3.5 h-3.5" style={{ color: '#3fb950' }} />
-                  </button>
-                  <button onClick={() => rejectChange(pc.id)} className="p-1 rounded hover:bg-[#f8514944]" title="拒绝更改">
-                    <XCircle className="w-3.5 h-3.5" style={{ color: '#f85149' }} />
-                  </button>
-                </>
-              )}
-              {pc.status === 'accepted' && <span className="text-[11px] flex items-center gap-0.5 px-1" style={{ color: '#3fb950' }}><Check className="w-3 h-3" />已接受</span>}
-              {pc.status === 'rejected' && <span className="text-[11px] px-1 line-through" style={{ color: '#f85149' }}>已拒绝</span>}
-            </div>
           </div>
-        </div>
-      )
-    })}
+        )
+      })}
     </>)
   }
 
@@ -881,16 +881,16 @@ ${planContent}
               </button>
               {showModePicker && (
                 <><div className="fixed inset-0 z-50" onClick={() => setShowModePicker(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 rounded shadow-lg py-1 min-w-[200px]" style={{ background: '#252526', border: '1px solid #3c3c3c' }}>
-                  {MODES.map((m) => (
-                    <button key={m.id} onClick={() => { setMode(m.id); setShowModePicker(false) }}
-                      className="flex items-center gap-2 w-full px-3 py-2 text-[12px] hover:bg-[#094771]"
-                      style={{ color: mode === m.id ? '#ffffff' : '#cccccc' }}>
-                      <m.icon className="w-3.5 h-3.5 shrink-0" />
-                      <div className="text-left"><div className="font-medium">{m.label}</div><div className="text-[11px]" style={{ color: '#969696' }}>{m.desc}</div></div>
-                    </button>
-                  ))}
-                </div></>
+                  <div className="absolute left-0 top-full mt-1 z-50 rounded shadow-lg py-1 min-w-[200px]" style={{ background: '#252526', border: '1px solid #3c3c3c' }}>
+                    {MODES.map((m) => (
+                      <button key={m.id} onClick={() => { setMode(m.id); setShowModePicker(false) }}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-[12px] hover:bg-[#094771]"
+                        style={{ color: mode === m.id ? '#ffffff' : '#cccccc' }}>
+                        <m.icon className="w-3.5 h-3.5 shrink-0" />
+                        <div className="text-left"><div className="font-medium">{m.label}</div><div className="text-[11px]" style={{ color: '#969696' }}>{m.desc}</div></div>
+                      </button>
+                    ))}
+                  </div></>
               )}
             </div>
 

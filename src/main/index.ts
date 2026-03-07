@@ -125,7 +125,7 @@ async function cleanupBeforeQuit(): Promise<void> {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.supershell.app')
+  electronApp.setAppUserModelId('com.nutshell.app')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

@@ -15,6 +15,15 @@ export function registerSystemHandlers(): void {
         }
     })
 
+    ipcMain.handle('system:showItemInFolder', async (_event, filePath: string) => {
+        try {
+            shell.showItemInFolder(filePath)
+            return { success: true }
+        } catch (error: any) {
+            return { success: false, error: error.message }
+        }
+    })
+
     ipcMain.handle('system:getTempDir', () => {
         return os.tmpdir()
     })

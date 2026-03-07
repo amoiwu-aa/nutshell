@@ -2,7 +2,7 @@ import { useRef, useEffect, useState } from 'react'
 import { monaco } from '../../lib/monacoSetup'
 
 // Use VS Code's built-in dark theme - just override background to match our panel
-const SUPERSHELL_THEME: monaco.editor.IStandaloneThemeData = {
+const NUTSHELL_THEME: monaco.editor.IStandaloneThemeData = {
   base: 'vs-dark',
   inherit: true,
   rules: [],
@@ -52,7 +52,7 @@ export function detectMonacoLang(filename: string): string {
 let themeRegistered = false
 function ensureTheme() {
   if (!themeRegistered) {
-    monaco.editor.defineTheme('supershell-dark', SUPERSHELL_THEME)
+    monaco.editor.defineTheme('nutshell-dark', NUTSHELL_THEME)
     themeRegistered = true
   }
 }
@@ -83,7 +83,7 @@ export function MonacoEditorWrapper({
     const editor = monaco.editor.create(containerRef.current, {
       value,
       language,
-      theme: 'supershell-dark',
+      theme: 'nutshell-dark',
       readOnly,
       automaticLayout: true,
       minimap: { enabled: true, scale: 1, showSlider: 'mouseover' },
@@ -228,7 +228,7 @@ export function MonacoDiffEditorWrapper({ original, modified, language, renderSi
     ensureTheme()
 
     const diffEditor = monaco.editor.createDiffEditor(containerRef.current, {
-      theme: 'supershell-dark',
+      theme: 'nutshell-dark',
       readOnly: true,
       automaticLayout: true,
       renderSideBySide,

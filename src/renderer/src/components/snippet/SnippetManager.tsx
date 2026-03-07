@@ -98,7 +98,7 @@ export function SnippetManager({ isOpen, onClose, onExecute }: SnippetManagerPro
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'supershell-snippets.json'
+    a.download = 'nutshell-snippets.json'
     a.click()
     URL.revokeObjectURL(url)
   }

@@ -340,7 +340,7 @@ class DockerManager {
     }
 
     // Step 1: Upload local file to remote server temp directory via SFTP
-    const tempDir = '/tmp/supershell-transfer'
+    const tempDir = '/tmp/nutshell-transfer'
     const filename = path.basename(localPath)
     const remoteTempPath = `${tempDir}/${filename}`
 
@@ -372,7 +372,7 @@ class DockerManager {
     }
 
     // Step 1: docker cp from container to remote server temp
-    const tempDir = '/tmp/supershell-transfer'
+    const tempDir = '/tmp/nutshell-transfer'
     const filename = path.basename(containerPath)
     const remoteTempPath = `${tempDir}/${filename}`
 
@@ -416,7 +416,7 @@ class DockerManager {
     if (output.includes('command not found')) throw new Error('Docker not available')
     return output.trim().split('\n').filter(Boolean).map((line) => {
       const p = line.split('|')
-      return { id: p[0]||'', name: p[1]||'', driver: p[2]||'', scope: p[3]||'' }
+      return { id: p[0] || '', name: p[1] || '', driver: p[2] || '', scope: p[3] || '' }
     })
   }
 
@@ -459,7 +459,7 @@ class DockerManager {
     // Read existing config, update mirrors, write back
     const output = await sshManager.exec(sessionId, 'cat /etc/docker/daemon.json 2>/dev/null || echo "{}"')
     let config: any = {}
-    try { config = JSON.parse(output.trim()) } catch {}
+    try { config = JSON.parse(output.trim()) } catch { }
     config['registry-mirrors'] = mirrors
 
     const json = JSON.stringify(config, null, 2).replace(/'/g, "'\\''")
@@ -499,7 +499,7 @@ class DockerManager {
         const lines = output.trim().split('\n')
         return lines.slice(1).filter((l) => l.trim()).map((line) => {
           const parts = line.split(/\s{2,}/)
-          return { name: parts[0]||'', status: parts[1]||'', configFiles: parts[2]||'' }
+          return { name: parts[0] || '', status: parts[1] || '', configFiles: parts[2] || '' }
         })
       }
     }
@@ -526,7 +526,7 @@ class DockerManager {
     const safePath = filePath.replace(/"/g, '\\"')
     // Use heredoc to write file content safely
     const escaped = content.replace(/\\/g, '\\\\').replace(/'/g, "'\\''")
-    return sshManager.exec(sessionId, `cat > "${safePath}" << 'SUPERSHELL_EOF'\n${content}\nSUPERSHELL_EOF`, 10000)
+    return sshManager.exec(sessionId, `cat > "${safePath}" << 'NUTSHELL_EOF'\n${content}\nNUTSHELL_EOF`, 10000)
   }
 
   // ========== CREATE CONTAINER ==========
