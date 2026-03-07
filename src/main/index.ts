@@ -28,6 +28,11 @@ let mainWindow: BrowserWindow | null = null
 function createWindow(): void {
   const savedBounds = configStore.getWindowBounds()
 
+  // Resolve icon path for both dev and production
+  const iconPath = is.dev
+    ? join(__dirname, '../../build/icon.png')
+    : join(process.resourcesPath, 'icon.png')
+
   mainWindow = new BrowserWindow({
     width: savedBounds.width,
     height: savedBounds.height,
@@ -37,7 +42,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     frame: false,
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: iconPath,
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
     webPreferences: {
