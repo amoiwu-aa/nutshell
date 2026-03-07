@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { Upload, Download, X, Check, RotateCcw, AlertCircle, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react'
 import { formatBytes, formatBytesPerSec } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
@@ -216,86 +216,190 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
           />
         </div>
       )}
-
       {/* Sub-files drop down */}
       {expanded && hasSubFiles && (
-        <div className="mt-2 pl-4 pr-1 max-h-[200px] overflow-y-auto space-y-0.5">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground pb-1 border-b border-border/20 mb-1">
-            <span>
-              共 {transfer.subFiles!.length} 个文件
-              {transfer.subFiles!.filter(f => f.status === 'completed').length > 0 && (
-                <span className="text-green-500 ml-2">
-                  ✓ {transfer.subFiles!.filter(f => f.status === 'completed').length}
-                </span>
-              )}
-              {transfer.subFiles!.filter(f => f.status === 'skipped').length > 0 && (
-                <span className="text-yellow-500 ml-2">
-                  ⊘ {transfer.subFiles!.filter(f => f.status === 'skipped').length} 已跳过
-                </span>
-              )}
-            </span>
-          </div>
-          {transfer.subFiles!.map((sf) => {
-            const isSFActive = sf.status === 'active'
-            const isSFCompleted = sf.status === 'completed'
-            const isSFQueued = sf.status === 'queued'
-            const isSFFailed = sf.status === 'failed'
-            const isSFSkipped = sf.status === 'skipped'
-
-            return (
-              <div
-                key={sf.index}
-                className={`flex items-center text-[10px] rounded px-2 py-1 ${isSFActive ? 'bg-blue-500/10 text-blue-300' :
-                    isSFCompleted ? 'bg-green-500/5 text-muted-foreground' :
-                      isSFSkipped ? 'bg-yellow-500/5 text-muted-foreground line-through opacity-50' :
-                        isSFFailed ? 'bg-red-500/10 text-destructive' :
-                          'bg-accent/20 text-muted-foreground'
-                  }`}
-              >
-                {/* Status dot */}
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mr-2 ${isSFActive ? 'bg-blue-400 animate-pulse' :
-                    isSFCompleted ? 'bg-green-500' :
-                      isSFSkipped ? 'bg-yellow-500' :
-                        isSFFailed ? 'bg-red-500' :
-                          'bg-muted-foreground/30'
-                  }`} />
-
-                {/* Filename */}
-                <span className="truncate flex-1" title={sf.remotePath}>{sf.filename}</span>
-
-                {/* Size */}
-                <span className="shrink-0 ml-2 tabular-nums">{formatBytes(sf.size)}</span>
-
-                {/* Status label */}
-                <span className="w-14 text-right shrink-0 ml-2">
-                  {isSFActive && <span className="text-blue-400">下载中</span>}
-                  {isSFCompleted && <span className="text-green-500">已完成</span>}
-                  {isSFQueued && <span>等待中</span>}
-                  {isSFFailed && <span className="text-destructive">失败</span>}
-                  {isSFSkipped && <span className="text-yellow-500">已跳过</span>}
-                </span>
-
-                {/* Action: Skip button for queued files */}
-                <div className="w-5 shrink-0 ml-1 flex justify-center">
-                  {isSFQueued && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        window.api.sftp.skipFile(transfer.id, sf.index)
-                        useTransferStore.getState().setSubFileStatus(transfer.id, sf.index, 'skipped')
-                      }}
-                      className="p-0.5 hover:bg-accent rounded transition-colors"
-                      title="跳过此文件"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        <SubFileList transfer={transfer} />
       )}
     </div>
   )
 })
+
+/** Sub-file list with batch selection support */
+function SubFileList({ transfer }: { transfer: TransferItem }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const lastClickedIdx = useRef<number | null>(null)
+
+  // Only queued files can be selected for skipping
+  const queuedIndices = transfer.subFiles!
+    .filter(sf => sf.status === 'queued')
+    .map(sf => sf.index)
+
+  const handleRowClick = useCallback((sfIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    // Only allow selecting queued files
+    const sf = transfer.subFiles!.find(f => f.index === sfIndex)
+    if (!sf || sf.status !== 'queued') return
+
+    setSelected(prev => {
+      const next = new Set(prev)
+
+      if (e.shiftKey && lastClickedIdx.current !== null) {
+        // Range select: from lastClicked to current
+        const from = lastClickedIdx.current
+        const to = sfIndex
+        const lo = Math.min(from, to)
+        const hi = Math.max(from, to)
+        for (const idx of queuedIndices) {
+          if (idx >= lo && idx <= hi) {
+            next.add(idx)
+          }
+        }
+      } else {
+        // Toggle single
+        if (next.has(sfIndex)) {
+          next.delete(sfIndex)
+        } else {
+          next.add(sfIndex)
+        }
+      }
+
+      lastClickedIdx.current = sfIndex
+      return next
+    })
+  }, [transfer.subFiles, queuedIndices])
+
+  const handleBatchSkip = useCallback(() => {
+    const store = useTransferStore.getState()
+    selected.forEach(idx => {
+      window.api.sftp.skipFile(transfer.id, idx)
+      store.setSubFileStatus(transfer.id, idx, 'skipped')
+    })
+    setSelected(new Set())
+  }, [selected, transfer.id])
+
+  const handleSelectAllQueued = useCallback(() => {
+    setSelected(new Set(queuedIndices))
+  }, [queuedIndices])
+
+  const completedCount = transfer.subFiles!.filter(f => f.status === 'completed').length
+  const skippedCount = transfer.subFiles!.filter(f => f.status === 'skipped').length
+
+  return (
+    <div className="mt-2 pl-4 pr-1 max-h-[200px] overflow-y-auto space-y-0.5">
+      {/* Header with stats and batch actions */}
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground pb-1 border-b border-border/20 mb-1">
+        <span>
+          共 {transfer.subFiles!.length} 个文件
+          {completedCount > 0 && (
+            <span className="text-green-500 ml-2">✓ {completedCount}</span>
+          )}
+          {skippedCount > 0 && (
+            <span className="text-yellow-500 ml-2">⊘ {skippedCount} 已跳过</span>
+          )}
+        </span>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <>
+              <span className="text-primary">已选 {selected.size} 项</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleBatchSkip() }}
+                className="px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 rounded transition-colors"
+                title="跳过选中文件"
+              >
+                批量跳过
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelected(new Set()) }}
+                className="px-1.5 py-0.5 hover:bg-accent rounded transition-colors"
+                title="取消选择"
+              >
+                取消
+              </button>
+            </>
+          )}
+          {selected.size === 0 && queuedIndices.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleSelectAllQueued() }}
+              className="px-1.5 py-0.5 hover:bg-accent rounded transition-colors"
+              title="全选等待中的文件"
+            >
+              全选等待
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* File rows */}
+      {transfer.subFiles!.map((sf) => {
+        const isSFActive = sf.status === 'active'
+        const isSFCompleted = sf.status === 'completed'
+        const isSFQueued = sf.status === 'queued'
+        const isSFFailed = sf.status === 'failed'
+        const isSFSkipped = sf.status === 'skipped'
+        const isSelected = selected.has(sf.index)
+
+        return (
+          <div
+            key={sf.index}
+            onClick={(e) => handleRowClick(sf.index, e)}
+            className={`flex items-center text-[10px] rounded px-2 py-1 transition-colors ${isSelected ? 'bg-primary/15 ring-1 ring-primary/40' :
+                isSFActive ? 'bg-blue-500/10 text-blue-300' :
+                  isSFCompleted ? 'bg-green-500/5 text-muted-foreground' :
+                    isSFSkipped ? 'bg-yellow-500/5 text-muted-foreground line-through opacity-50' :
+                      isSFFailed ? 'bg-red-500/10 text-destructive' :
+                        'bg-accent/20 text-muted-foreground'
+              } ${isSFQueued ? 'cursor-pointer hover:bg-accent/40' : ''}`}
+          >
+            {/* Checkbox / Status dot */}
+            {isSFQueued ? (
+              <span className={`w-3 h-3 rounded border shrink-0 mr-2 flex items-center justify-center ${isSelected ? 'border-primary bg-primary/20' : 'border-muted-foreground/30'
+                }`}>
+                {isSelected && <Check className="w-2 h-2 text-primary" />}
+              </span>
+            ) : (
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 mr-2 ${isSFActive ? 'bg-blue-400 animate-pulse' :
+                  isSFCompleted ? 'bg-green-500' :
+                    isSFSkipped ? 'bg-yellow-500' :
+                      isSFFailed ? 'bg-red-500' :
+                        'bg-muted-foreground/30'
+                }`} />
+            )}
+
+            {/* Filename */}
+            <span className="truncate flex-1" title={sf.remotePath}>{sf.filename}</span>
+
+            {/* Size */}
+            <span className="shrink-0 ml-2 tabular-nums">{formatBytes(sf.size)}</span>
+
+            {/* Status label */}
+            <span className="w-14 text-right shrink-0 ml-2">
+              {isSFActive && <span className="text-blue-400">下载中</span>}
+              {isSFCompleted && <span className="text-green-500">已完成</span>}
+              {isSFQueued && <span>等待中</span>}
+              {isSFFailed && <span className="text-destructive">失败</span>}
+              {isSFSkipped && <span className="text-yellow-500">已跳过</span>}
+            </span>
+
+            {/* Action: Skip button for queued files */}
+            <div className="w-5 shrink-0 ml-1 flex justify-center">
+              {isSFQueued && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.api.sftp.skipFile(transfer.id, sf.index)
+                    useTransferStore.getState().setSubFileStatus(transfer.id, sf.index, 'skipped')
+                    setSelected(prev => { const n = new Set(prev); n.delete(sf.index); return n })
+                  }}
+                  className="p-0.5 hover:bg-accent rounded transition-colors"
+                  title="跳过此文件"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
