@@ -518,6 +518,7 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
   const [scrollTop, setScrollTop] = useState(0)
   const [viewHeight, setViewHeight] = useState(600)
   const [copied, setCopied] = useState(false)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
   // Parse lines once
   const allLines = useMemo(() => logViewer.logs ? logViewer.logs.split('\n') : [], [logViewer.logs])
@@ -572,6 +573,27 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
     setTimeout(() => setCopied(false), 1500)
   }, [logViewer.logs])
 
+  // Copy selection
+  const handleCopySelection = useCallback(() => {
+    const sel = window.getSelection()?.toString()
+    if (sel) {
+      navigator.clipboard.writeText(sel)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
+  }, [])
+
+  // Select all log text
+  const handleSelectAll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }, [])
+
   // Save logs to local file via Blob download
   const handleSaveToFile = useCallback(() => {
     const blob = new Blob([logViewer.logs], { type: 'text/plain' })
@@ -582,6 +604,12 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
     a.click()
     URL.revokeObjectURL(url)
   }, [logViewer.logs, logViewer.name])
+
+  // Right-click context menu handler
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setCtxMenu({ x: e.clientX, y: e.clientY })
+  }, [])
 
   // Render a single line (with highlight if searching)
   const renderLine = useCallback((line: { text: string; idx: number }) => {
@@ -636,7 +664,8 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
           className="flex-1 overflow-auto min-h-[200px] bg-[#0d1117]"
           onScroll={handleScroll}
           style={{ userSelect: 'text' }}
-          onContextMenu={(e) => { const s = window.getSelection()?.toString(); if (s) { e.preventDefault(); navigator.clipboard.writeText(s) } }}
+          onContextMenu={handleContextMenu}
+          onClick={() => setCtxMenu(null)}
         >
           {logViewer.loading ? (
             <div className="p-4 text-xs font-mono text-[#c9d1d9]">Loading...</div>
@@ -654,6 +683,45 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
             </div>
           )}
         </div>
+
+        {/* Right-click context menu */}
+        {ctxMenu && (
+          <>
+            <div className="fixed inset-0 z-[90]" onClick={() => setCtxMenu(null)} />
+            <div
+              className="fixed z-[100] bg-popover text-popover-foreground border border-border rounded-lg shadow-xl py-1 min-w-[160px] select-none"
+              style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            >
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => { handleCopySelection(); setCtxMenu(null) }}
+              >
+                <Copy className="w-3.5 h-3.5 shrink-0" /> 复制选中
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => { handleCopyAll(); setCtxMenu(null) }}
+              >
+                <Copy className="w-3.5 h-3.5 shrink-0" /> 复制全部日志
+              </button>
+              <div className="border-t border-border/50 my-1" />
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => { handleSelectAll(); setCtxMenu(null) }}
+              >
+                <FileText className="w-3.5 h-3.5 shrink-0" /> 全选
+              </button>
+              <div className="border-t border-border/50 my-1" />
+              <button
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+                onClick={() => { handleSaveToFile(); setCtxMenu(null) }}
+              >
+                <Save className="w-3.5 h-3.5 shrink-0" /> 保存到文件
+              </button>
+            </div>
+          </>
+        )}
+
         <div className="px-5 py-1.5 border-t border-border text-[10px] text-muted-foreground shrink-0 flex justify-between">
           <span>共 {totalLineCount.toLocaleString()} 行{logViewer.searchText ? ` | 匹配 ${displayLines.length.toLocaleString()} 行` : ''} | {formatBytes(logViewer.logs.length)}</span>
           {totalLineCount > 10000 && <span className="text-green-500">✓ 虚拟滚动已启用</span>}
