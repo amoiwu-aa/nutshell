@@ -698,49 +698,49 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
           )}
         </div>
 
-        {/* Right-click context menu */}
-        {ctxMenu && (
-          <>
-            <div className="fixed inset-0 z-[90]" onClick={() => setCtxMenu(null)} />
-            <div
-              className="fixed z-[100] bg-popover text-popover-foreground border border-border rounded-lg shadow-xl py-1 min-w-[160px] select-none"
-              style={{ left: ctxMenu.x, top: ctxMenu.y }}
-            >
-              <button
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-                onClick={() => { handleCopySelection(); setCtxMenu(null) }}
-              >
-                <Copy className="w-3.5 h-3.5 shrink-0" /> 复制选中
-              </button>
-              <button
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-                onClick={() => { handleCopyAll(); setCtxMenu(null) }}
-              >
-                <Copy className="w-3.5 h-3.5 shrink-0" /> 复制全部日志
-              </button>
-              <div className="border-t border-border/50 my-1" />
-              <button
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-                onClick={() => { handleSelectAll(); setCtxMenu(null) }}
-              >
-                <FileText className="w-3.5 h-3.5 shrink-0" /> 全选
-              </button>
-              <div className="border-t border-border/50 my-1" />
-              <button
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
-                onClick={() => { handleSaveToFile(); setCtxMenu(null) }}
-              >
-                <Save className="w-3.5 h-3.5 shrink-0" /> 保存到文件
-              </button>
-            </div>
-          </>
-        )}
-
         <div className="px-5 py-1.5 border-t border-border text-[10px] text-muted-foreground shrink-0 flex justify-between">
           <span>共 {totalLineCount.toLocaleString()} 行{logViewer.searchText ? ` | 匹配 ${displayLines.length.toLocaleString()} 行` : ''} | {formatBytes(logViewer.logs.length)}</span>
           {totalLineCount > 10000 && <span className="text-green-500">✓ 虚拟滚动已启用</span>}
         </div>
       </div>
+
+      {/* Right-click context menu */}
+      {ctxMenu && (
+        <>
+          <div className="fixed inset-0 z-[100]" onClick={() => setCtxMenu(null)} />
+          <div
+            className="fixed z-[105] bg-popover text-popover-foreground border border-border rounded-lg shadow-xl py-1 min-w-[160px] select-none"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          >
+            <button
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+              onClick={() => { handleCopySelection(); setCtxMenu(null) }}
+            >
+              <Copy className="w-3.5 h-3.5 shrink-0" /> 复制选中
+            </button>
+            <button
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+              onClick={() => { handleCopyAll(); setCtxMenu(null) }}
+            >
+              <Copy className="w-3.5 h-3.5 shrink-0" /> 复制全部日志
+            </button>
+            <div className="border-t border-border/50 my-1" />
+            <button
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+              onClick={() => { handleSelectAll(); setCtxMenu(null) }}
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" /> 全选
+            </button>
+            <div className="border-t border-border/50 my-1" />
+            <button
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground rounded transition-colors"
+              onClick={() => { handleSaveToFile(); setCtxMenu(null) }}
+            >
+              <Save className="w-3.5 h-3.5 shrink-0" /> 保存到文件
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
