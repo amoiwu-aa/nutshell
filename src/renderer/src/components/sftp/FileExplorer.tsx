@@ -400,25 +400,21 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
       id: transferId, sessionId, direction,
       localPath: lPath, remotePath: rPath, filename,
       totalSize, transferredBytes: 0,
-      status: 'active', speed: 0, eta: 0,
+      status: 'queued', speed: 0, eta: 0,
       startedAt: Date.now(), resumable: false, resumeOffset: 0
     }
-    useTransferStore.getState().addTransfer(item)
+
     useConnectionStore.getState().setBottomPanelActiveTab('transfers')
     useConnectionStore.getState().setBottomPanelVisible(true)
 
-    const apiCall = direction === 'upload'
-      ? window.api.sftp.uploadWithId(sessionId, lPath, rPath, transferId)
-      : window.api.sftp.downloadWithId(sessionId, rPath, lPath, transferId)
-
-    apiCall.then((result: any) => {
-      if (result && !result.success) {
-        useTransferStore.getState().setStatus(transferId, 'failed', result.error)
+    // Enqueue the transfer inside the store, which ensures max concurrency 1
+    useTransferStore.getState().enqueueTransfer(item, () => {
+      // The executor function that actually triggers the IPC when its turn arrives
+      if (direction === 'upload') {
+        return window.api.sftp.uploadWithId(sessionId, lPath, rPath, transferId)
       } else {
-        useTransferStore.getState().setStatus(transferId, 'completed')
+        return window.api.sftp.downloadWithId(sessionId, rPath, lPath, transferId)
       }
-    }).catch((err: any) => {
-      useTransferStore.getState().setStatus(transferId, 'failed', err?.message)
     })
 
     return transferId
@@ -447,7 +443,7 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
       if (!remoteFile) continue
       const src = `${remotePath}/${filename}`
       const dest = `${localPath}\\${filename}`
-      startTrackedTransfer('download', dest, src, remoteFile.isDirectory ? `📁 ${filename}` : filename, remoteFile.attrs?.size || remoteFile.size || 0)
+      startTrackedTransfer('download', dest, src, remoteFile.isDirectory ? `📁 ${filename}` : filename, (remoteFile as any).attrs?.size || remoteFile.size || 0)
     }
     setTimeout(() => loadLocalFiles(localPath), 1000)
   }

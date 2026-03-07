@@ -46,11 +46,69 @@ function calculateSpeed(id: string, transferred: number): number {
 interface TransferState {
   transfers: TransferItem[]
   addTransfer: (transfer: TransferItem) => void
+  enqueueTransfer: (transfer: TransferItem, executor: () => Promise<any>) => void
   updateProgress: (id: string, transferred: number, total: number) => void
   setStatus: (id: string, status: TransferStatus, error?: string) => void
   removeTransfer: (id: string) => void
   clearCompleted: () => void
   getActiveCount: () => number
+}
+
+const transferExecutors = new Map<string, () => Promise<any>>()
+
+let isProcessingQueue = false
+const MAX_CONCURRENT = 1
+
+async function processQueue() {
+  if (isProcessingQueue) return
+  isProcessingQueue = true
+
+  try {
+    const store = useTransferStore.getState()
+    const activeCount = store.transfers.filter((t: TransferItem) => t.status === 'active').length
+
+    if (activeCount >= MAX_CONCURRENT) {
+      isProcessingQueue = false
+      return // Wait for current ones to finish
+    }
+
+    const nextTasks = store.transfers.filter((t: TransferItem) => t.status === 'queued')
+    if (nextTasks.length === 0) {
+      isProcessingQueue = false
+      return
+    }
+
+    // Determine how many we can start right now
+    const toStart = nextTasks.slice(0, MAX_CONCURRENT - activeCount)
+
+    for (const task of toStart) {
+      const executor = transferExecutors.get(task.id)
+      if (!executor) continue
+
+      store.setStatus(task.id, 'active')
+
+      executor()
+        .then((result: any) => {
+          if (result && !result.success) {
+            useTransferStore.getState().setStatus(task.id, 'failed', result.error)
+          } else {
+            useTransferStore.getState().setStatus(task.id, 'completed')
+          }
+        })
+        .catch((err: any) => {
+          useTransferStore.getState().setStatus(task.id, 'failed', err?.message)
+        })
+        .finally(() => {
+          transferExecutors.delete(task.id)
+          // Free to process next in queue after a slight delay
+          setTimeout(() => {
+            processQueue()
+          }, 500)
+        })
+    }
+  } finally {
+    isProcessingQueue = false
+  }
 }
 
 export const useTransferStore = create<TransferState>((set, get) => ({
@@ -61,6 +119,12 @@ export const useTransferStore = create<TransferState>((set, get) => ({
     set((state) => ({
       transfers: [transfer, ...state.transfers]
     }))
+  },
+
+  enqueueTransfer: (transfer, executor) => {
+    transferExecutors.set(transfer.id, executor)
+    get().addTransfer({ ...transfer, status: 'queued' })
+    processQueue()
   },
 
   updateProgress: (id, transferred, total) => {
