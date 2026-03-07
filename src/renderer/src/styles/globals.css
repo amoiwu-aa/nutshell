@@ -206,78 +206,88 @@
   }
 }
 
-/* Glass theme — real glassmorphism effects */
+/* ═══════════════════════════════════════════════════════
+   Glass theme — true frosted glassmorphism
+   ═══════════════════════════════════════════════════════ */
 
-/* Animated gradient mesh background — gives the blur something to refract */
-.theme-glass body {
+/* Step 1: Colorful gradient mesh on html::before — sits behind everything */
+.theme-glass::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background:
-    radial-gradient(ellipse at 15% 20%, hsla(200, 80%, 35%, 0.35) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 25%, hsla(260, 70%, 40%, 0.25) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 80%, hsla(170, 70%, 30%, 0.2) 0%, transparent 55%),
-    hsl(220, 20%, 8%) !important;
+    radial-gradient(ellipse 600px 400px at 10% 15%, hsla(200, 90%, 45%, 0.5) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 500px at 85% 20%, hsla(270, 80%, 50%, 0.35) 0%, transparent 100%),
+    radial-gradient(ellipse 700px 350px at 50% 85%, hsla(160, 80%, 40%, 0.3) 0%, transparent 100%),
+    radial-gradient(ellipse 400px 300px at 70% 60%, hsla(330, 70%, 45%, 0.2) 0%, transparent 100%),
+    hsl(220, 25%, 6%);
 }
 
-@keyframes glass-gradient-shift {
-
-  0%,
-  100% {
-    background-position: 0% 0%, 100% 0%, 50% 100%;
-  }
-
-  50% {
-    background-position: 20% 30%, 80% 10%, 40% 70%;
-  }
+/* Step 2: Make body & root fully transparent so the gradient shows through */
+.theme-glass body {
+  background: transparent !important;
 }
 
-/* All card-like panels: sidebar, file panels, table headers */
+.theme-glass #root {
+  background: transparent !important;
+}
+
+/* Step 3: Sidebar & card panels — frosted glass */
 .theme-glass .bg-card {
-  background-color: rgba(20, 30, 50, 0.45) !important;
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
-  border-color: rgba(100, 160, 220, 0.12) !important;
+  background-color: rgba(15, 25, 45, 0.35) !important;
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: inset 0 1px 0 0 rgba(150, 200, 255, 0.06);
 }
 
-/* Tab bars, borders */
-.theme-glass .border-border {
-  border-color: rgba(100, 160, 220, 0.12) !important;
+/* Step 4: bg-background elements — semi‐transparent */
+.theme-glass .bg-background {
+  background-color: rgba(8, 16, 32, 0.4) !important;
 }
 
-/* Hover accents stay translucent */
+/* Step 5: Borders - translucent blue glow */
+.theme-glass .border-border,
+.theme-glass .border-b,
+.theme-glass [class*="border-border"] {
+  border-color: rgba(100, 170, 255, 0.1) !important;
+}
+
+/* Step 6: Hover accents */
 .theme-glass .hover\:bg-accent:hover {
-  background-color: rgba(60, 100, 160, 0.2) !important;
+  background-color: rgba(60, 120, 200, 0.18) !important;
 }
 
-/* Popover/dropdown overlays */
+/* Step 7: Popover/dropdown overlays */
 .theme-glass .bg-popover {
-  background-color: rgba(18, 28, 48, 0.65) !important;
+  background-color: rgba(12, 22, 42, 0.6) !important;
   backdrop-filter: blur(24px) saturate(1.8);
   -webkit-backdrop-filter: blur(24px) saturate(1.8);
-  border-color: rgba(100, 160, 220, 0.15) !important;
 }
 
-/* Dialogs — strong blur, highly translucent */
+/* Step 8: Dialogs — heavily frosted */
 .theme-glass .dialog-content {
-  background-color: rgba(15, 25, 45, 0.6) !important;
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  background-color: rgba(10, 20, 40, 0.55) !important;
+  backdrop-filter: blur(32px) saturate(2);
+  -webkit-backdrop-filter: blur(32px) saturate(2);
   box-shadow:
-    0 30px 60px -15px rgba(0, 0, 0, 0.5),
+    0 30px 60px -10px rgba(0, 0, 0, 0.6),
     0 0 0 1px rgba(100, 180, 255, 0.12),
-    inset 0 1px 0 0 rgba(150, 200, 255, 0.08);
-  border-color: rgba(100, 160, 220, 0.15) !important;
+    inset 0 1px 0 0 rgba(160, 210, 255, 0.1);
+  border-color: rgba(100, 170, 255, 0.12) !important;
 }
 
-/* Context menus */
+/* Step 9: Context menus */
 .theme-glass .context-menu {
-  background-color: rgba(18, 28, 48, 0.7) !important;
+  background-color: rgba(12, 22, 42, 0.65) !important;
   backdrop-filter: blur(28px) saturate(1.8);
   -webkit-backdrop-filter: blur(28px) saturate(1.8);
-  border-color: rgba(100, 160, 220, 0.15) !important;
+  border-color: rgba(100, 170, 255, 0.12) !important;
 }
 
-/* Input fields */
-.theme-glass .bg-background {
-  background-color: rgba(12, 20, 38, 0.5) !important;
+/* Step 10: Active/selected tab */
+.theme-glass .bg-primary {
+  box-shadow: 0 0 12px hsla(200, 90%, 58%, 0.3);
 }
 
 /* Focus visible for keyboard navigation */
