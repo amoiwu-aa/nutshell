@@ -51,7 +51,8 @@ export function ConnectionDialog() {
 
   // Listen for connection:new and connection:edit events
   useEffect(() => {
-    const handleNew = () => {
+    const handleNew = (e?: CustomEvent<{ group?: string }>) => {
+      const defaultGroup = e?.detail?.group || '默认分组'
       setForm({
         id: uuidv4(),
         name: '',
@@ -62,7 +63,7 @@ export function ConnectionDialog() {
         password: '',
         privateKeyPath: '',
         passphrase: '',
-        group: '默认分组',
+        group: defaultGroup,
         jumpHost: '',
         color: '#3b82f6'
       })

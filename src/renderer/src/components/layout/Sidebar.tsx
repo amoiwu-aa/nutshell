@@ -93,6 +93,12 @@ export function Sidebar() {
     window.dispatchEvent(event)
   }
 
+  const handleNewConnectionInGroup = (groupName: string) => {
+    const event = new CustomEvent('connection:new', { detail: { group: groupName } })
+    window.dispatchEvent(event)
+    setGroupContextMenu(null)
+  }
+
   const handleEditConnection = (connection: ConnectionConfig) => {
     const event = new CustomEvent('connection:edit', { detail: connection })
     window.dispatchEvent(event)
@@ -488,6 +494,15 @@ export function Sidebar() {
             role="menu"
             aria-label="分组操作菜单"
           >
+            <button
+              role="menuitem"
+              onClick={() => handleNewConnectionInGroup(groupContextMenu.groupName)}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              在此分组新建连接
+            </button>
+            <div className="border-t border-border/50 my-1" role="separator" />
             <button
               role="menuitem"
               onClick={() => {
