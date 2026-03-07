@@ -8,7 +8,7 @@ export interface SubFileItem {
   filename: string
   remotePath: string
   size: number
-  status: 'queued' | 'active' | 'completed' | 'failed'
+  status: 'queued' | 'active' | 'completed' | 'failed' | 'skipped'
 }
 
 export interface TransferItem {

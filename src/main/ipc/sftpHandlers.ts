@@ -176,6 +176,12 @@ export function registerSFTPHandlers(): void {
     return { success: cancelled }
   })
 
+  // Skip a sub-file in a directory transfer
+  ipcMain.handle('sftp:skipFile', async (_event, transferId: string, fileIndex: number) => {
+    const skipped = sftpManager.skipFile(transferId, fileIndex)
+    return { success: skipped }
+  })
+
   // Get remote file size (for resume)
   ipcMain.handle('sftp:getRemoteFileSize', async (_event, sessionId: string, remotePath: string) => {
     try {

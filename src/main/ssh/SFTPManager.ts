@@ -41,6 +41,7 @@ class SFTPManager {
   private sftpSessions: Map<string, SFTPWrapper> = new Map()
   private sftpLocks: Map<string, Promise<SFTPWrapper>> = new Map()
   private activeTransfers: Map<string, { abort: () => void }> = new Map()
+  private skipFileSets: Map<string, Set<number>> = new Map()
 
   private async getSFTP(sessionId: string): Promise<SFTPWrapper> {
     const existing = this.sftpSessions.get(sessionId)
@@ -290,10 +291,14 @@ class SFTPManager {
       win.webContents.send('sftp:dirFileList', id, subFileList)
     }
 
+    // Initialize skip set for this transfer
+    this.skipFileSets.set(id, new Set())
+
     this.activeTransfers.set(id, {
       abort: () => {
         cancelled = true
         this.activeTransfers.delete(id)
+        this.skipFileSets.delete(id)
       }
     })
 
@@ -305,6 +310,18 @@ class SFTPManager {
       const file = fileList[fileIdx]
       if (cancelled || !this.activeTransfers.has(id)) {
         throw new Error('Transfer cancelled')
+      }
+
+      // Check if this file was skipped by the user
+      const skipSet = this.skipFileSets.get(id)
+      if (skipSet && skipSet.has(fileIdx)) {
+        // Adjust total: subtract skipped file size so progress stays accurate
+        totalTransferred += file.size
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('sftp:fileStatus', id, fileIdx, 'skipped')
+        }
+        this.notifyProgress(id, totalTransferred, totalSize, path.basename(file.remote))
+        continue
       }
 
       // Notify frontend that this sub-file is now active
@@ -392,6 +409,7 @@ class SFTPManager {
     }
 
     this.activeTransfers.delete(id)
+    this.skipFileSets.delete(id)
     console.log(`[SFTP] Directory download complete: ${safePath} -> ${localPath}`)
   }
 
@@ -646,6 +664,15 @@ class SFTPManager {
     const transfer = this.activeTransfers.get(transferId)
     if (transfer) {
       transfer.abort()
+      return true
+    }
+    return false
+  }
+
+  skipFile(transferId: string, fileIndex: number): boolean {
+    const skipSet = this.skipFileSets.get(transferId)
+    if (skipSet) {
+      skipSet.add(fileIndex)
       return true
     }
     return false

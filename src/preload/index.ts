@@ -114,6 +114,8 @@ const api = {
       ipcRenderer.invoke('sftp:downloadDir', sessionId, remotePath, localPath, transferId),
     cancelTransfer: (transferId: string) =>
       ipcRenderer.invoke('sftp:cancelTransfer', transferId),
+    skipFile: (transferId: string, fileIndex: number) =>
+      ipcRenderer.invoke('sftp:skipFile', transferId, fileIndex),
     getRemoteFileSize: (sessionId: string, remotePath: string) =>
       ipcRenderer.invoke('sftp:getRemoteFileSize', sessionId, remotePath),
     selectDirectory: (title?: string) =>
