@@ -3,6 +3,14 @@ import { create } from 'zustand'
 export type TransferStatus = 'queued' | 'active' | 'completed' | 'failed' | 'cancelled'
 export type TransferDirection = 'upload' | 'download'
 
+export interface SubFileItem {
+  index: number
+  filename: string
+  remotePath: string
+  size: number
+  status: 'queued' | 'active' | 'completed' | 'failed'
+}
+
 export interface TransferItem {
   id: string
   sessionId: string
@@ -21,6 +29,7 @@ export interface TransferItem {
   completedAt?: number
   resumable: boolean
   resumeOffset: number
+  subFiles?: SubFileItem[]
 }
 
 // Speed calculation state (outside Zustand to avoid unnecessary re-renders)
@@ -53,6 +62,8 @@ interface TransferState {
   removeTransfer: (id: string) => void
   clearCompleted: () => void
   getActiveCount: () => number
+  setSubFiles: (transferId: string, files: SubFileItem[]) => void
+  setSubFileStatus: (transferId: string, fileIndex: number, status: string) => void
 }
 
 const transferExecutors = new Map<string, () => Promise<any>>()
@@ -208,5 +219,25 @@ export const useTransferStore = create<TransferState>((set, get) => ({
 
   getActiveCount: () => {
     return get().transfers.filter((t) => t.status === 'active').length
+  },
+
+  setSubFiles: (transferId, files) => {
+    set((state) => ({
+      transfers: state.transfers.map((t) =>
+        t.id === transferId ? { ...t, subFiles: files } : t
+      )
+    }))
+  },
+
+  setSubFileStatus: (transferId, fileIndex, status) => {
+    set((state) => ({
+      transfers: state.transfers.map((t) => {
+        if (t.id !== transferId || !t.subFiles) return t
+        const newSubFiles = t.subFiles.map((sf) =>
+          sf.index === fileIndex ? { ...sf, status: status as SubFileItem['status'] } : sf
+        )
+        return { ...t, subFiles: newSubFiles }
+      })
+    }))
   }
 }))

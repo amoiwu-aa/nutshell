@@ -128,6 +128,18 @@ const api = {
       ) => callback(id, transferred, total, currentFile)
       ipcRenderer.on('sftp:progress', handler)
       return () => ipcRenderer.removeListener('sftp:progress', handler)
+    },
+    onDirFileList: (callback: (transferId: string, files: any[]) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, transferId: string, files: any[]) =>
+        callback(transferId, files)
+      ipcRenderer.on('sftp:dirFileList', handler)
+      return () => ipcRenderer.removeListener('sftp:dirFileList', handler)
+    },
+    onFileStatus: (callback: (transferId: string, fileIndex: number, status: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, transferId: string, fileIndex: number, status: string) =>
+        callback(transferId, fileIndex, status)
+      ipcRenderer.on('sftp:fileStatus', handler)
+      return () => ipcRenderer.removeListener('sftp:fileStatus', handler)
     }
   },
 

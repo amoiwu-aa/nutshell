@@ -278,6 +278,18 @@ class SFTPManager {
 
     console.log(`[SFTP] Downloading directory: ${safePath} -> ${localPath} (${fileList.length} files, ${totalSize} bytes)`)
 
+    // Send file list to frontend so it can show sub-file details
+    const subFileList = fileList.map((f, idx) => ({
+      index: idx,
+      filename: path.basename(f.remote),
+      remotePath: f.remote,
+      size: f.size,
+      status: 'queued' as string
+    }))
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('sftp:dirFileList', id, subFileList)
+    }
+
     this.activeTransfers.set(id, {
       abort: () => {
         cancelled = true
@@ -289,9 +301,15 @@ class SFTPManager {
 
     const MAX_RETRIES = 3
 
-    for (const file of fileList) {
+    for (let fileIdx = 0; fileIdx < fileList.length; fileIdx++) {
+      const file = fileList[fileIdx]
       if (cancelled || !this.activeTransfers.has(id)) {
         throw new Error('Transfer cancelled')
+      }
+
+      // Notify frontend that this sub-file is now active
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('sftp:fileStatus', id, fileIdx, 'active')
       }
 
       // Ensure local directory exists
@@ -356,12 +374,21 @@ class SFTPManager {
       }
 
       if (lastErr) {
+        // Notify this sub-file failed
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('sftp:fileStatus', id, fileIdx, 'failed')
+        }
         this.activeTransfers.delete(id)
         throw lastErr
       }
 
       totalTransferred += file.size
       this.notifyProgress(id, totalTransferred, totalSize, path.basename(file.remote))
+
+      // Notify this sub-file completed
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('sftp:fileStatus', id, fileIdx, 'completed')
+      }
     }
 
     this.activeTransfers.delete(id)

@@ -1,5 +1,5 @@
-import React from 'react'
-import { Upload, Download, X, Check, RotateCcw, AlertCircle, FolderOpen } from 'lucide-react'
+import React, { useState } from 'react'
+import { Upload, Download, X, Check, RotateCcw, AlertCircle, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react'
 import { formatBytes, formatBytesPerSec } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
 
@@ -30,16 +30,20 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
   const setStatus = useTransferStore((s) => s.setStatus)
   const removeTransfer = useTransferStore((s) => s.removeTransfer)
 
+  const [expanded, setExpanded] = useState(false)
+
   const percent = transfer.totalSize > 0
     ? Math.min(100, Math.round((transfer.transferredBytes / transfer.totalSize) * 100))
     : 0
 
-  const handleCancel = async () => {
+  const handleCancel = async (e: React.MouseEvent) => {
+    e.stopPropagation()
     await window.api.sftp.cancelTransfer(transfer.id)
     setStatus(transfer.id, 'cancelled')
   }
 
-  const handleRetry = async (fromStart: boolean) => {
+  const handleRetry = async (fromStart: boolean, e: React.MouseEvent) => {
+    e.stopPropagation()
     let resumeOffset = 0
     if (!fromStart && transfer.transferredBytes > 0) {
       if (transfer.direction === 'upload') {
@@ -72,23 +76,35 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
   const isFailed = transfer.status === 'failed' || transfer.status === 'cancelled'
   const isQueued = transfer.status === 'queued'
 
+  const hasSubFiles = transfer.subFiles && transfer.subFiles.length > 0
+
   return (
     <div className="px-3 py-2 border-b border-border/30 hover:bg-accent/30 transition-colors">
       {/* Top line: icon + filename + status info + actions */}
-      <div className="flex items-center gap-2 mb-1">
+      <div
+        className={`flex items-center gap-2 mb-1 ${hasSubFiles ? 'cursor-pointer select-none' : ''}`}
+        onClick={() => hasSubFiles && setExpanded(!expanded)}
+      >
+        {/* Expand toggle */}
+        {hasSubFiles ? (
+          expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        ) : null}
+
         {/* Direction icon */}
-        {transfer.direction === 'upload' ? (
-          <Upload className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-        ) : (
-          <Download className="w-3.5 h-3.5 text-green-400 shrink-0" />
+        {!hasSubFiles && (
+          transfer.direction === 'upload' ? (
+            <Upload className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+          ) : (
+            <Download className="w-3.5 h-3.5 text-green-400 shrink-0" />
+          )
         )}
 
         {/* Filename */}
         <span className="text-xs truncate flex-1" title={transfer.remotePath}>
           {transfer.filename}
-          {transfer.currentFile && (
+          {transfer.currentFile && !expanded && (
             <span className="ml-2 pr-1 text-[10px] text-muted-foreground" title={transfer.currentFile}>
-              {transfer.currentFile}
+              ({transfer.currentFile})
             </span>
           )}
         </span>
@@ -128,7 +144,7 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
             <>
               {transfer.resumable && (
                 <button
-                  onClick={() => handleRetry(false)}
+                  onClick={(e) => handleRetry(false, e)}
                   className="p-0.5 hover:bg-accent rounded transition-colors"
                   title="断点续传"
                 >
@@ -136,7 +152,7 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
                 </button>
               )}
               <button
-                onClick={() => handleRetry(true)}
+                onClick={(e) => handleRetry(true, e)}
                 className="p-0.5 hover:bg-accent rounded transition-colors"
                 title="重新开始"
               >
@@ -146,7 +162,10 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
           )}
           {isCompleted && transfer.direction === 'download' && (
             <button
-              onClick={() => window.api.system.showItemInFolder(transfer.localPath)}
+              onClick={(e) => {
+                e.stopPropagation()
+                window.api.system.showItemInFolder(transfer.localPath)
+              }}
               className="p-0.5 hover:bg-accent rounded transition-colors"
               title="打开所在文件夹"
             >
@@ -155,7 +174,10 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
           )}
           {(isCompleted || isFailed) && (
             <button
-              onClick={() => removeTransfer(transfer.id)}
+              onClick={(e) => {
+                e.stopPropagation()
+                removeTransfer(transfer.id)
+              }}
               className="p-0.5 hover:bg-accent rounded transition-colors"
               title="移除"
             >
@@ -167,7 +189,7 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
 
       {/* Progress bar (only for active/queued) */}
       {(isActive || transfer.status === 'queued') && (
-        <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+        <div className="h-1.5 bg-secondary rounded-full overflow-hidden mt-1.5 mb-1">
           <div
             className="h-full rounded-full transition-all duration-300"
             style={{
@@ -180,18 +202,47 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
 
       {/* Completed bar (full green) */}
       {isCompleted && (
-        <div className="h-1 bg-green-500/30 rounded-full overflow-hidden">
+        <div className="h-1 bg-green-500/30 rounded-full overflow-hidden mt-1 mb-1">
           <div className="h-full rounded-full bg-green-500" style={{ width: '100%' }} />
         </div>
       )}
 
       {/* Failed bar (partial red) */}
       {isFailed && percent > 0 && (
-        <div className="h-1 bg-secondary rounded-full overflow-hidden">
+        <div className="h-1 bg-secondary rounded-full overflow-hidden mt-1 mb-1">
           <div
             className="h-full rounded-full bg-destructive"
             style={{ width: `${percent}%` }}
           />
+        </div>
+      )}
+
+      {/* Sub-files drop down */}
+      {expanded && hasSubFiles && (
+        <div className="mt-2 pl-4 pr-1 max-h-[150px] overflow-y-auto space-y-1">
+          {transfer.subFiles!.map((sf) => {
+            const isSFActive = sf.status === 'active'
+            const isSFCompleted = sf.status === 'completed'
+            const isSFQueued = sf.status === 'queued'
+            const isSFFailed = sf.status === 'failed'
+
+            return (
+              <div key={sf.index} className="flex flex-col text-[10px] text-muted-foreground bg-accent/20 rounded px-2 py-1">
+                <div className="flex items-center justify-between">
+                  <span className="truncate flex-1" title={sf.filename}>{sf.filename}</span>
+                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                    <span>{formatBytes(sf.size)}</span>
+                    <span className="w-12 text-right">
+                      {isSFActive && <span className="text-blue-400">下载中</span>}
+                      {isSFCompleted && <span className="text-green-500">已完成</span>}
+                      {isSFQueued && <span>等待中</span>}
+                      {isSFFailed && <span className="text-destructive">失败</span>}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

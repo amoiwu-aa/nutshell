@@ -59,26 +59,37 @@ function AppContent() {
 
   // Global transfer progress listener — throttled to avoid UI stutter
   useEffect(() => {
-    const pending = new Map<string, { transferred: number; total: number }>()
+    const pending = new Map<string, { transferred: number; total: number; currentFile?: string }>()
     let rafId: number | null = null
 
     const flush = () => {
       rafId = null
       const store = useTransferStore.getState()
-      pending.forEach(({ transferred, total }, id) => {
-        store.updateProgress(id, transferred, total)
+      pending.forEach(({ transferred, total, currentFile }, id) => {
+        store.updateProgress(id, transferred, total, currentFile)
       })
       pending.clear()
     }
 
-    const cleanup = window.api.sftp.onProgress((id: string, transferred: number, total: number) => {
-      pending.set(id, { transferred, total })
+    const cleanupProgress = window.api.sftp.onProgress((id: string, transferred: number, total: number, currentFile?: string) => {
+      pending.set(id, { transferred, total, currentFile })
       if (rafId === null) {
         rafId = requestAnimationFrame(flush)
       }
     })
+
+    const cleanupDirFileList = window.api.sftp.onDirFileList((transferId: string, files: any[]) => {
+      useTransferStore.getState().setSubFiles(transferId, files)
+    })
+
+    const cleanupFileStatus = window.api.sftp.onFileStatus((transferId: string, fileIndex: number, status: string) => {
+      useTransferStore.getState().setSubFileStatus(transferId, fileIndex, status)
+    })
+
     return () => {
-      cleanup()
+      cleanupProgress()
+      cleanupDirFileList()
+      cleanupFileStatus()
       if (rafId !== null) cancelAnimationFrame(rafId)
     }
   }, [])
