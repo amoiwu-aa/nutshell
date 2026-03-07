@@ -37,6 +37,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     frame: false,
+    icon: join(__dirname, '../../build/icon.png'),
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
     webPreferences: {
