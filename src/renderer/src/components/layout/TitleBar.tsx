@@ -36,7 +36,7 @@ export function TitleBar() {
 
   return (
     <>
-      <div className="flex items-center h-9 bg-card border-b border-border drag-region shrink-0">
+      <div className="flex items-center h-9 bg-card border-b border-border drag-region shrink-0 titlebar-gradient">
         {/* App icon and title */}
         <div className="flex items-center px-3 gap-2 no-drag">
           <Terminal className="w-4 h-4 text-primary" />

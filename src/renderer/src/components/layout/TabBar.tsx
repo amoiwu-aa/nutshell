@@ -108,7 +108,7 @@ export function TabBar() {
               className={cn(
                 'flex items-center gap-1.5 px-3 h-full cursor-pointer border-r border-border text-sm transition-colors shrink-0 max-w-[200px] group',
                 isActive
-                  ? 'bg-background text-foreground border-b-2 border-b-primary'
+                  ? 'bg-background text-foreground tab-active-glow'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )}
             >

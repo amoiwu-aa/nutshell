@@ -19,13 +19,13 @@ const terminalThemes = [
 ]
 
 const uiColorThemes = [
-  { id: '', name: '默认蓝', preview: '#3b82f6' },
-  { id: 'theme-midnight', name: '午夜蓝', preview: '#4466cc' },
-  { id: 'theme-forest', name: '森林绿', preview: '#36b37e' },
-  { id: 'theme-rose', name: '玫瑰红', preview: '#e04080' },
-  { id: 'theme-glass', name: '透明玻璃', preview: 'linear-gradient(135deg, #38bdf8, #818cf8)' },
-  { id: 'theme-sakura', name: '樱花粉', preview: '#c084fc' },
-  { id: 'theme-cyberpunk', name: '赛博朋克', preview: '#f97316' }
+  { id: '', name: '默认蓝', accent: '#3b82f6', bg: '#0d1117', card: '#161b22' },
+  { id: 'theme-midnight', name: '午夜蓝', accent: '#4d8eff', bg: '#0a0e1a', card: '#141c2e' },
+  { id: 'theme-forest', name: '森林绿', accent: '#2dd4a0', bg: '#0a1410', card: '#122019' },
+  { id: 'theme-rose', name: '玫瑰红', accent: '#f04080', bg: '#1a0a10', card: '#261019' },
+  { id: 'theme-glass', name: '透明玻璃', accent: '#38bdf8', bg: 'linear-gradient(135deg, #0c1929, #1a1040)', card: 'rgba(15,25,45,0.5)' },
+  { id: 'theme-sakura', name: '樱花粉', accent: '#c084fc', bg: '#140e1c', card: '#1e1628' },
+  { id: 'theme-cyberpunk', name: '赛博朋克', accent: '#f97316', bg: '#0a0812', card: '#161218' }
 ]
 
 const fontFamilies = [
@@ -150,14 +150,29 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                         key={ct.id}
                         onClick={() => handleColorThemeChange(ct.id)}
                         className={cn(
-                          'flex items-center gap-2 px-3 py-2 border rounded-lg text-sm transition-colors',
+                          'flex flex-col items-center gap-1.5 p-2 border rounded-xl text-sm transition-all',
                           colorTheme === ct.id
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50'
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                            : 'border-border hover:border-primary/50 hover:scale-[1.02]'
                         )}
                       >
-                        <div className="w-4 h-4 rounded-full border border-border" style={{ background: ct.preview }} />
-                        <span className="text-xs">{ct.name}</span>
+                        {/* Mini UI preview */}
+                        <div className="w-full h-14 rounded-lg overflow-hidden relative" style={{ background: ct.bg }}>
+                          {/* Mini sidebar */}
+                          <div className="absolute left-0 top-0 bottom-0 w-[30%] border-r" style={{ background: ct.card, borderColor: ct.accent + '20' }}>
+                            <div className="mt-2 mx-1 h-1 rounded-full" style={{ background: ct.accent, opacity: 0.7 }} />
+                            <div className="mt-1.5 mx-1 h-1 rounded-full bg-white/10" />
+                            <div className="mt-1 mx-1 h-1 rounded-full bg-white/10" />
+                          </div>
+                          {/* Mini content */}
+                          <div className="absolute left-[32%] top-1 right-1 bottom-1 rounded" style={{ background: ct.card, opacity: 0.6 }}>
+                            <div className="mt-1.5 mx-1.5 h-1 w-[60%] rounded-full bg-white/15" />
+                            <div className="mt-1 mx-1.5 h-1 w-[40%] rounded-full bg-white/10" />
+                          </div>
+                          {/* Accent dot */}
+                          <div className="absolute bottom-1 right-1.5 w-2 h-2 rounded-full" style={{ background: ct.accent, boxShadow: '0 0 6px ' + ct.accent + '60' }} />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">{ct.name}</span>
                       </button>
                     ))}
                   </div>

@@ -38,7 +38,7 @@ export function StatusBar() {
         {activeTab ? (
           <div className="flex items-center gap-1.5">
             {activeTab.connected ? (
-              <Wifi className="w-3 h-3 text-green-500" />
+              <span className="status-dot-connected mr-1" />
             ) : (
               <WifiOff className="w-3 h-3 text-destructive" />
             )}

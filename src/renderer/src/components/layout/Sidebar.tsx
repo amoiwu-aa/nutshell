@@ -256,7 +256,7 @@ export function Sidebar() {
               <button
                 onClick={() => toggleGroup(group)}
                 onContextMenu={(e) => handleGroupContextMenu(e, group)}
-                className="flex items-center gap-1 w-full px-2 py-1 hover:bg-accent rounded-md text-sm text-muted-foreground transition-colors"
+                className="flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-accent rounded-lg text-xs font-semibold uppercase tracking-wider text-muted-foreground/70 transition-colors"
               >
                 {expandedGroups.has(group) ? (
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -294,13 +294,10 @@ export function Sidebar() {
                       key={conn.id}
                       onDoubleClick={() => handleConnect(conn)}
                       onContextMenu={(e) => handleContextMenu(e, conn)}
-                      className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-accent rounded-md text-sm transition-colors group"
+                      className="flex items-center gap-2 w-full px-2 py-1.5 hover:bg-accent rounded-md text-sm transition-colors group sidebar-item"
                       title={`${conn.host}:${conn.port} - 双击连接`}
                     >
-                      <Server
-                        className="w-3.5 h-3.5 shrink-0"
-                        style={{ color: conn.color || 'hsl(var(--primary))' }}
-                      />
+                      <div className="w-0.5 h-6 rounded-full shrink-0" style={{ background: conn.color || 'hsl(var(--primary))' }} />
                       <div className="flex flex-col items-start overflow-hidden flex-1">
                         <span className="text-foreground truncate w-full text-left">
                           {conn.name}
@@ -344,7 +341,7 @@ export function Sidebar() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-border">
+        <div className="flex items-center justify-between px-3 py-2 border-t border-border/50">
           <div className="flex items-center gap-1">
             <button
               onClick={() => {
