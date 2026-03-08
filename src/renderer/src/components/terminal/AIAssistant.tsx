@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Send, Terminal, HelpCircle, AlertTriangle, Sparkles, X, Copy, Play,
-  Loader2, Shield, Zap, Eye, Check, Ban
+  Loader2, Shield, Zap, Eye, Check, Ban, ChevronDown
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
@@ -283,39 +283,30 @@ export function AIAssistant({
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium">AI 助手</span>
+          <div className="w-6 h-6 rounded-md bg-primary/15 flex items-center justify-center">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+          </div>
+          <span className="text-sm font-semibold">AI 助手</span>
         </div>
-        <div className="flex items-center gap-1">
-          {/* Execution mode toggle */}
+        <div className="flex items-center gap-1.5">
           <button
             onClick={() => setExecutionMode(executionMode === 'confirm' ? 'auto' : 'confirm')}
             className={cn(
-              'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors',
+              'flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all',
               executionMode === 'auto'
-                ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                : 'bg-secondary text-secondary-foreground'
+                ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/25 shadow-[0_0_8px_rgba(234,179,8,0.1)]'
+                : 'bg-secondary text-muted-foreground hover:text-foreground'
             )}
             title={executionMode === 'auto' ? '自主模式：AI 自动执行命令' : '确认模式：每条命令需手动确认'}
           >
             {executionMode === 'auto' ? <Zap className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
             {executionMode === 'auto' ? '自主' : '确认'}
           </button>
-          <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded-md transition-colors"><X className="w-4 h-4 text-muted-foreground" /></button>
         </div>
       </div>
 
-      {/* Mode buttons */}
-      <div className="flex gap-1 px-2 py-1.5 border-b border-border shrink-0">
-        {modes.map((mode) => (
-          <button key={mode.id} onClick={() => setActiveMode(mode.id)}
-            className={cn('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
-              activeMode === mode.id ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
-            )}>
-            <mode.icon className="w-3 h-3" />{mode.label}
-          </button>
-        ))}
-      </div>
+
 
       {/* Auto mode banner */}
       {executionMode === 'auto' && (
@@ -328,10 +319,24 @@ export function AIAssistant({
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
         {messages.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <p className="text-xs">AI 可以看到你的终端内容</p>
-            <p className="text-xs mt-1 opacity-60">需要先在设置中配置 API Key</p>
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-primary/10 flex items-center justify-center welcome-logo">
+              <Sparkles className="w-7 h-7 text-primary/60" />
+            </div>
+            <p className="text-xs font-medium text-foreground/70 mb-1">AI 可以看到你的终端内容</p>
+            <p className="text-[10px] text-muted-foreground/60">需要先在设置中配置 API Key</p>
+            <div className="flex flex-wrap justify-center gap-1.5 mt-5">
+              {modes.map((m) => (
+                <button key={m.id} onClick={() => setActiveMode(m.id)}
+                  className={cn('flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] transition-all border',
+                    activeMode === m.id
+                      ? 'bg-primary/10 text-primary border-primary/20'
+                      : 'bg-secondary/50 text-muted-foreground border-transparent hover:border-border hover:text-foreground'
+                  )}>
+                  <m.icon className="w-3 h-3" />{m.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -345,7 +350,7 @@ export function AIAssistant({
               <div className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                 <div className={cn(
                   'max-w-[95%] rounded-lg px-3 py-2 text-xs',
-                  msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground',
+                  msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-secondary/70 text-secondary-foreground border-l-2 border-primary/30 rounded-bl-sm',
                   msg.type === 'confirm-needed' && 'border-2 border-yellow-500/50 bg-yellow-500/10'
                 )}>
                   {msg.role === 'assistant' ? renderContent(msg) : msg.content}
@@ -390,31 +395,47 @@ export function AIAssistant({
       </div>
 
       {/* Input */}
-      <div className="px-3 py-2 border-t border-border shrink-0">
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
-            placeholder={activeMode === 'diagnose' ? '描述错误或直接发送（AI 会读取终端）' : activeMode === 'command' ? '描述你想做什么...' : '输入消息...'}
-            rows={2}
-            className="flex-1 px-2 py-1.5 bg-background border border-input rounded-lg text-xs outline-none focus:ring-1 focus:ring-ring resize-none"
-            disabled={loading}
-          />
-          <button onClick={handleSend} disabled={loading || !input.trim()}
-            className="self-end p-2 bg-primary text-primary-foreground rounded-lg disabled:opacity-50 hover:bg-primary/90">
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="flex items-center gap-2 mt-1.5">
+      <div className="px-3 py-2.5 border-t border-border shrink-0 space-y-2">
+        {/* Mode selector row */}
+        <div className="flex items-center gap-2">
+          <select
+            value={activeMode}
+            onChange={(e) => setActiveMode(e.target.value as any)}
+            className="px-2 py-1 bg-secondary border-none rounded-md text-[10px] font-medium text-muted-foreground outline-none cursor-pointer hover:text-foreground transition-colors"
+            style={{ backgroundImage: 'none', paddingRight: '8px' }}
+          >
+            {modes.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </select>
           <button
             onClick={() => {
               const content = getTerminalContent()
               if (content) setInput((prev) => prev + '\n[终端内容]\n' + content.substring(content.length - 500))
             }}
-            className="flex items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded transition-colors"
+            className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors ml-auto"
+            title="插入终端内容"
           >
-            <Eye className="w-3 h-3" /> 插入终端内容
+            <Eye className="w-3 h-3" /> 终端
+          </button>
+        </div>
+        {/* Input row */}
+        <div className="flex gap-1.5 items-end">
+          <div className="flex-1 relative">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+              placeholder={activeMode === 'diagnose' ? '描述错误或直接发送...' : activeMode === 'command' ? '描述你想做什么...' : '输入消息...'}
+              rows={1}
+              className="w-full px-3 py-2 bg-background border border-input rounded-xl text-xs outline-none focus:ring-1 focus:ring-ring resize-none"
+              disabled={loading}
+              style={{ minHeight: '36px', maxHeight: '80px' }}
+            />
+          </div>
+          <button onClick={handleSend} disabled={loading || !input.trim()}
+            className="p-2 bg-primary text-primary-foreground rounded-xl disabled:opacity-50 hover:bg-primary/90 transition-colors btn-glow shrink-0">
+            <Send className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
