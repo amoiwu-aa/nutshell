@@ -31,7 +31,7 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
             bottomPanelActiveTab === 'files'
-              ? 'text-primary border-primary'
+              ? 'text-primary border-primary tab-active-glow'
               : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
           )}
         >
@@ -43,7 +43,7 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
             bottomPanelActiveTab === 'commands'
-              ? 'text-primary border-primary'
+              ? 'text-primary border-primary tab-active-glow'
               : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
           )}
         >
@@ -55,7 +55,7 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
             bottomPanelActiveTab === 'transfers'
-              ? 'text-primary border-primary'
+              ? 'text-primary border-primary tab-active-glow'
               : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
           )}
         >
@@ -72,7 +72,7 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
           className={cn(
             'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
             bottomPanelActiveTab === 'ports'
-              ? 'text-primary border-primary'
+              ? 'text-primary border-primary tab-active-glow'
               : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
           )}
         >

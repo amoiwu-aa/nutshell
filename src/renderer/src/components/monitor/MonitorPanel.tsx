@@ -181,7 +181,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
         {/* Loading state */}
         {!currentData && (
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-            <Activity className="w-6 h-6 mb-2 animate-pulse" />
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-2 welcome-logo"><Activity className="w-5 h-5 text-primary" /></div>
             <p className="text-xs">正在收集数据...</p>
           </div>
         )}
@@ -190,7 +190,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
           <>
             {/* System Info Card */}
             {sysInfo && (
-              <div className="rounded-lg bg-secondary/40 border border-border/50 px-2.5 py-2 space-y-1">
+              <div className="rounded-xl bg-secondary/30 border border-border/50 px-3 py-2.5 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Server className="w-3.5 h-3.5 text-primary shrink-0" />
@@ -383,7 +383,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
                             剩余 {formatBytes(d.total - d.used)}/{formatBytes(d.total)}
                           </span>
                         </div>
-                        <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-2 bg-secondary rounded-full overflow-hidden">
                           <div
                             className="h-full rounded-full transition-all duration-500"
                             style={{
@@ -409,21 +409,27 @@ function MetricBar({ icon: Icon, label, percent, detail, color }: {
   icon: any; label: string; percent: number; detail: string; color: string
 }) {
   return (
-    <div>
-      <div className="flex items-center justify-between mb-0.5">
-        <div className="flex items-center gap-1">
-          <Icon className="w-3 h-3" style={{ color }} />
-          <span className="text-[10px] font-medium">{label}</span>
+    <div className="group">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{ background: color + '18' }}>
+            <Icon className="w-3 h-3" style={{ color }} />
+          </div>
+          <span className="text-[10px] font-semibold">{label}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground">{detail}</span>
           <span className="text-[10px] font-mono font-bold" style={{ color }}>{percent}%</span>
         </div>
       </div>
-      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+      <div className="h-2 bg-secondary rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: color }}
+          style={{
+            width: `${Math.min(percent, 100)}%`,
+            backgroundColor: color,
+            boxShadow: `0 0 8px ${color}40`
+          }}
         />
       </div>
     </div>

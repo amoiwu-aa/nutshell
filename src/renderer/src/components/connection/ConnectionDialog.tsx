@@ -156,9 +156,14 @@ export function ConnectionDialog() {
       <div className="relative bg-card border border-border rounded-xl shadow-2xl w-[520px] max-h-[85vh] overflow-hidden dialog-content">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="text-lg font-semibold">
-            {isEditing ? '编辑连接' : '新建 SSH 连接'}
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+              <Server className="w-4 h-4 text-primary" />
+            </div>
+            <h2 className="text-lg font-semibold">
+              {isEditing ? '编辑连接' : '新建 SSH 连接'}
+            </h2>
+          </div>
           <button
             onClick={() => setIsOpen(false)}
             className="p-1 hover:bg-accent rounded-md transition-colors"
@@ -190,7 +195,7 @@ export function ConnectionDialog() {
                     onClick={() => setForm((prev) => ({ ...prev, color }))}
                     className={cn(
                       'w-6 h-6 rounded-full transition-transform',
-                      form.color === color && 'ring-2 ring-offset-2 ring-offset-card ring-primary scale-110'
+                      form.color === color && 'ring-2 ring-offset-2 ring-offset-card ring-primary scale-110 shadow-[0_0_8px_var(--tw-ring-color)]'
                     )}
                     style={{ backgroundColor: color }}
                   />
@@ -459,7 +464,7 @@ export function ConnectionDialog() {
           </button>
           <button
             onClick={handleConnect}
-            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium"
+            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-medium btn-glow"
           >
             保存并连接
           </button>
