@@ -88,15 +88,17 @@ export function ContentArea() {
 
   return (
     <div className="flex-1 min-h-0 overflow-hidden relative">
-      {tabs.map((tab) => (
+      {tabs.map((tab) => {
+        const isActive = tab.id === activeTabId
+        return (
         <div
           key={tab.id}
           className="absolute inset-0 flex flex-col overflow-hidden"
-          style={{ display: tab.id === activeTabId ? 'flex' : 'none' }}
+          style={{ display: isActive ? 'flex' : 'none' }}
         >
           <Suspense fallback={<LoadingFallback name="终端" />}>
             {tab.type === 'terminal' && (
-              <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} />
+              <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} isActive={isActive} />
             )}
           </Suspense>
           <Suspense fallback={<LoadingFallback name="文件管理器" />}>
@@ -114,7 +116,7 @@ export function ContentArea() {
           </Suspense>
           <Suspense fallback={<LoadingFallback name="监控" />}>
             {tab.type === 'monitor' && (
-              <MonitorDashboard sessionId={tab.sessionId} tabId={tab.id} />
+              <MonitorDashboard sessionId={tab.sessionId} tabId={tab.id} isActive={isActive} />
             )}
           </Suspense>
           <Suspense fallback={<LoadingFallback name="Docker" />}>
@@ -125,12 +127,13 @@ export function ContentArea() {
           <Suspense fallback={<LoadingFallback name="工作区" />}>
             {tab.type === 'workspace' && tab.workspacePath && (
               <WorkspaceErrorBoundary>
-                <WorkspacePanel sessionId={tab.sessionId} tabId={tab.id} rootPath={tab.workspacePath} />
+                <WorkspacePanel sessionId={tab.sessionId} tabId={tab.id} rootPath={tab.workspacePath} isActive={isActive} />
               </WorkspaceErrorBoundary>
             )}
           </Suspense>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

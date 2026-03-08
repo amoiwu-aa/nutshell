@@ -14,6 +14,7 @@ import '@xterm/xterm/css/xterm.css'
 interface TerminalPanelProps {
   sessionId: string
   tabId: string
+  isActive: boolean
 }
 
 const terminalThemes: Record<string, any> = {
@@ -70,10 +71,12 @@ function getTerminalBufferContent(terminal: Terminal, lines: number = 50): strin
 // Single terminal instance component
 function TerminalInstance({
   sessionId,
+  isActive,
   className,
   onTerminalRef
 }: {
   sessionId: string
+  isActive: boolean
   className?: string
   onTerminalRef?: (ref: Terminal | null) => void
 }) {
@@ -88,6 +91,7 @@ function TerminalInstance({
   const copyToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingOutputRef = useRef('')
   const outputRafRef = useRef<number | null>(null)
+  const isActiveRef = useRef(isActive)
   const selectedTerminalTheme = useSettingsStore((state) => state.settings.terminalTheme)
   const fontSize = useSettingsStore((state) => state.settings.fontSize)
   const fontFamily = useSettingsStore((state) => state.settings.fontFamily)
@@ -98,6 +102,25 @@ function TerminalInstance({
     if (copyToastTimerRef.current) clearTimeout(copyToastTimerRef.current)
     copyToastTimerRef.current = setTimeout(() => setCopyToast(false), 1200)
   }, [])
+
+  useEffect(() => {
+    isActiveRef.current = isActive
+    if (!isActive) {
+      if (outputRafRef.current !== null) {
+        cancelAnimationFrame(outputRafRef.current)
+        outputRafRef.current = null
+      }
+      return
+    }
+    if (terminalRef.current && pendingOutputRef.current && outputRafRef.current === null) {
+      outputRafRef.current = requestAnimationFrame(() => {
+        outputRafRef.current = null
+        if (!terminalRef.current || !pendingOutputRef.current || !isActiveRef.current) return
+        terminalRef.current.write(pendingOutputRef.current)
+        pendingOutputRef.current = ''
+      })
+    }
+  }, [isActive])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -183,14 +206,14 @@ function TerminalInstance({
 
     const flushBufferedOutput = () => {
       outputRafRef.current = null
-      if (!pendingOutputRef.current) return
+      if (!pendingOutputRef.current || !isActiveRef.current) return
       terminal.write(pendingOutputRef.current)
       pendingOutputRef.current = ''
     }
 
     const queueOutput = (data: string) => {
       pendingOutputRef.current += data
-      if (outputRafRef.current === null) {
+      if (isActiveRef.current && outputRafRef.current === null) {
         outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
       }
     }
@@ -390,7 +413,7 @@ function TerminalInstance({
 }
 
 // Main panel with split support + AI assistant
-export function TerminalPanel({ sessionId, tabId }: TerminalPanelProps) {
+export function TerminalPanel({ sessionId, tabId, isActive }: TerminalPanelProps) {
   const [splitMode, setSplitMode] = useState<'none' | 'horizontal' | 'vertical'>('none')
   const [showAI, setShowAI] = useState(false)
   const terminalInstanceRef = useRef<Terminal | null>(null)
@@ -462,16 +485,16 @@ export function TerminalPanel({ sessionId, tabId }: TerminalPanelProps) {
         </div>
 
         {splitMode === 'none' ? (
-          <TerminalInstance sessionId={sessionId} className="flex-1" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
+          <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
         ) : splitMode === 'vertical' ? (
           <div className="flex flex-1 overflow-hidden">
-            <TerminalInstance sessionId={sessionId} className="flex-1 border-r border-border" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
-            <TerminalInstance sessionId={sessionId} className="flex-1" />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1 border-r border-border" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1" />
           </div>
         ) : (
           <div className="flex flex-col flex-1 overflow-hidden">
-            <TerminalInstance sessionId={sessionId} className="flex-1 border-b border-border" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
-            <TerminalInstance sessionId={sessionId} className="flex-1" />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1 border-b border-border" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1" />
           </div>
         )}
       </div>

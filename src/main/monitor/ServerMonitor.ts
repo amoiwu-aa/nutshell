@@ -95,16 +95,34 @@ class ServerMonitor {
   private prevNetworkStats: Map<string, { time: number; total: { rx: number; tx: number }; interfaces: Map<string, { rx: number; tx: number }> }> = new Map()
   private prevCpuStats: Map<string, CpuSnapshot> = new Map()
   private enabledModules: Map<string, MonitorModules> = new Map()
+  private subscriberCounts: Map<string, number> = new Map()
+  private startingSessions: Set<string> = new Set()
   private inFlightSessions: Set<string> = new Set()
 
   async start(sessionId: string, intervalMs: number = 3000, modules?: MonitorModules): Promise<void> {
-    this.stop(sessionId)
+    const subscriberCount = this.subscriberCounts.get(sessionId) || 0
+    this.subscriberCounts.set(sessionId, subscriberCount + 1)
     this.enabledModules.set(sessionId, modules || DEFAULT_MODULES)
+
+    if (subscriberCount > 0 && (this.intervals.has(sessionId) || this.startingSessions.has(sessionId))) {
+      return
+    }
+    this.startingSessions.add(sessionId)
 
     try {
       await this.collectAndSend(sessionId)
     } catch (err: any) {
       this.notifyError(sessionId, err?.message || 'Failed to collect initial data')
+    }
+
+    if ((this.subscriberCounts.get(sessionId) || 0) <= 0) {
+      this.startingSessions.delete(sessionId)
+      return
+    }
+
+    if (this.intervals.has(sessionId)) {
+      this.startingSessions.delete(sessionId)
+      return
     }
 
     const timer = setInterval(async () => {
@@ -113,25 +131,39 @@ class ServerMonitor {
       try {
         await this.collectAndSend(sessionId)
       } catch {
-        this.stop(sessionId)
+        this.stop(sessionId, true)
       } finally {
         this.inFlightSessions.delete(sessionId)
       }
     }, intervalMs)
 
     this.intervals.set(sessionId, timer)
+    this.startingSessions.delete(sessionId)
   }
 
   updateModules(sessionId: string, modules: MonitorModules): void {
     this.enabledModules.set(sessionId, modules)
   }
 
-  stop(sessionId: string): void {
+  stop(sessionId: string, force: boolean = false): void {
+    if (!force) {
+      const subscriberCount = this.subscriberCounts.get(sessionId) || 0
+      if (subscriberCount > 1) {
+        this.subscriberCounts.set(sessionId, subscriberCount - 1)
+        return
+      }
+    }
+    this.subscriberCounts.delete(sessionId)
+    this.stopTracking(sessionId)
+  }
+
+  private stopTracking(sessionId: string): void {
     const timer = this.intervals.get(sessionId)
     if (timer) {
       clearInterval(timer)
       this.intervals.delete(sessionId)
     }
+    this.startingSessions.delete(sessionId)
     this.inFlightSessions.delete(sessionId)
     this.prevNetworkStats.delete(sessionId)
     this.prevCpuStats.delete(sessionId)
@@ -140,7 +172,7 @@ class ServerMonitor {
 
   private async collectAndSend(sessionId: string): Promise<void> {
     if (!sshManager.isConnected(sessionId)) {
-      this.stop(sessionId)
+      this.stop(sessionId, true)
       return
     }
 
@@ -482,7 +514,7 @@ class ServerMonitor {
   }
 
   stopAll(): void {
-    for (const [id] of this.intervals) { this.stop(id) }
+    for (const [id] of this.intervals) { this.stop(id, true) }
   }
 
   private notifyError(sessionId: string, message: string): void {

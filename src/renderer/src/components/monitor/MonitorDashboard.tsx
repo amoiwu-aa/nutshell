@@ -31,7 +31,7 @@ interface MonitorData {
 interface SystemInfo { hostname: string; os: string; kernel: string; cpuCores: number; arch: string }
 interface ProcessInfo { pid: number; user: string; cpu: number; mem: number; vsz: number; rss: number; command: string }
 
-interface MonitorDashboardProps { sessionId: string; tabId: string }
+interface MonitorDashboardProps { sessionId: string; tabId: string; isActive: boolean }
 
 const MAX_DATA_POINTS = 60
 type SortKey = 'pid' | 'user' | 'cpu' | 'mem' | 'rss' | 'command'
@@ -45,7 +45,7 @@ const moduleLabels: Record<keyof MonitorModules, string> = {
   gpu: 'GPU 显卡', ports: '端口占用'
 }
 
-export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
+export function MonitorDashboard({ sessionId, tabId, isActive }: MonitorDashboardProps) {
   const [currentData, setCurrentData] = useState<MonitorData | null>(null)
   const [history, setHistory] = useState<MonitorData[]>([])
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
@@ -90,6 +90,7 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
+    if (!isActive) return
     startMonitoring()
     const removeListener = window.api.monitor.onData((sid: string, data: any) => {
       if (sid !== sessionId) return
@@ -117,9 +118,12 @@ export function MonitorDashboard({ sessionId, tabId }: MonitorDashboardProps) {
       window.api.monitor.stop(sessionId)
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
-  }, [sessionId])
+  }, [sessionId, isActive, startMonitoring])
 
-  useEffect(() => { window.api.monitor.updateModules?.(sessionId, mod) }, [mod, sessionId])
+  useEffect(() => {
+    if (!isActive) return
+    window.api.monitor.updateModules?.(sessionId, mod)
+  }, [mod, sessionId, isActive])
 
   const toggleModule = (key: keyof MonitorModules) => {
     setSettings({ monitorModules: { ...mod, [key]: !mod[key] } })

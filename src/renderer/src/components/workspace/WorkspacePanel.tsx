@@ -43,7 +43,7 @@ const C = {
   success: '#3fb950',
 }
 
-interface WorkspacePanelProps { sessionId: string; tabId: string; rootPath: string }
+interface WorkspacePanelProps { sessionId: string; tabId: string; rootPath: string; isActive: boolean }
 type SidebarView = 'files' | 'search' | 'outline' | 'git'
 type BottomTab = 'terminal' | 'problems'
 
@@ -51,7 +51,7 @@ interface LspServerInfo {
   language: string; available: boolean; installHint: string; recommended: boolean; running: boolean; starting: boolean
 }
 
-export function WorkspacePanel({ sessionId, tabId, rootPath }: WorkspacePanelProps) {
+export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: WorkspacePanelProps) {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [diffFile, setDiffFile] = useState<string | null>(null)
@@ -65,9 +65,16 @@ export function WorkspacePanel({ sessionId, tabId, rootPath }: WorkspacePanelPro
   const [gitChanges, setGitChanges] = useState<Map<string, string>>(new Map())
   const [cursorLine, setCursorLine] = useState(1)
   const [cursorCol, setCursorCol] = useState(1)
+  const openFilesRef = useRef<OpenFile[]>([])
+  const activeFileRef = useRef<string | null>(null)
+  const diffFileRef = useRef<string | null>(null)
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null)
   const [lspServers, setLspServers] = useState<LspServerInfo[]>([])
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([])
+
+  useEffect(() => { openFilesRef.current = openFiles }, [openFiles])
+  useEffect(() => { activeFileRef.current = activeFile }, [activeFile])
+  useEffect(() => { diffFileRef.current = diffFile }, [diffFile])
 
   // ===== Git =====
   const loadGitStatus = useCallback(async () => {
@@ -81,7 +88,10 @@ export function WorkspacePanel({ sessionId, tabId, rootPath }: WorkspacePanelPro
       }
     } catch {}
   }, [sessionId, rootPath])
-  useEffect(() => { loadGitStatus() }, [loadGitStatus])
+  useEffect(() => {
+    if (!isActive) return
+    loadGitStatus()
+  }, [loadGitStatus, isActive])
 
   // ===== LSP =====
   useEffect(() => {
@@ -133,7 +143,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath }: WorkspacePanelPro
   // ===== File ops =====
   const handleFileOpen = useCallback(async (filePath: string, line?: number) => {
     setDiffFile(null)
-    const existing = openFiles.find((f) => f.path === filePath)
+    const existing = openFilesRef.current.find((f) => f.path === filePath)
     if (existing) {
       setActiveFile(filePath)
       if (line && editorRef.current) setTimeout(() => { editorRef.current?.revealLineInCenter(line!); editorRef.current?.setPosition({ lineNumber: line!, column: 1 }) }, 100)
@@ -149,37 +159,38 @@ export function WorkspacePanel({ sessionId, tabId, rootPath }: WorkspacePanelPro
       else setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content: `// Error: ${r.error}`, loading: false } : f))
     } catch (err: any) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content: `// Error: ${err.message}`, loading: false } : f)) }
     if (line) setTimeout(() => { editorRef.current?.revealLineInCenter(line); editorRef.current?.setPosition({ lineNumber: line, column: 1 }) }, 300)
-  }, [openFiles, sessionId])
+  }, [sessionId])
 
   const handleFileClose = useCallback((filePath: string) => {
-    const file = openFiles.find((f) => f.path === filePath)
+    const currentOpenFiles = openFilesRef.current
+    const file = currentOpenFiles.find((f) => f.path === filePath)
     if (file?.modified && !confirm(`${file.name} 有未保存的更改，确定关闭？`)) return
     if (file) notifyFileClose(sessionId, filePath, file.language)
     setOpenFiles((prev) => prev.filter((f) => f.path !== filePath))
-    if (activeFile === filePath) { const remaining = openFiles.filter((f) => f.path !== filePath); setActiveFile(remaining.length > 0 ? remaining[remaining.length - 1].path : null) }
-    if (diffFile === filePath) setDiffFile(null)
-  }, [openFiles, activeFile, diffFile, sessionId])
+    if (activeFileRef.current === filePath) { const remaining = currentOpenFiles.filter((f) => f.path !== filePath); setActiveFile(remaining.length > 0 ? remaining[remaining.length - 1].path : null) }
+    if (diffFileRef.current === filePath) setDiffFile(null)
+  }, [sessionId])
 
   const handleContentChange = useCallback((filePath: string, content: string) => {
     setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content, modified: content !== f.originalContent } : f))
-    const file = openFiles.find((f) => f.path === filePath)
+    const file = openFilesRef.current.find((f) => f.path === filePath)
     if (file) notifyFileChange(sessionId, filePath, file.language, content)
-  }, [openFiles, sessionId])
+  }, [sessionId])
 
   const handleSave = useCallback(async (filePath: string) => {
-    const file = openFiles.find((f) => f.path === filePath)
+    const file = openFilesRef.current.find((f) => f.path === filePath)
     if (!file) return
     try {
       const r = await window.api.sftp.writeFile(sessionId, filePath, file.content)
       if (r.success) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, originalContent: f.content, modified: false } : f)); notifyFileSave(sessionId, filePath, file.language, file.content); loadGitStatus() }
     } catch {}
-  }, [openFiles, sessionId, loadGitStatus])
+  }, [sessionId, loadGitStatus])
 
   const handleWriteFile = useCallback(async (filePath: string, content: string) => {
     await window.api.sftp.writeFile(sessionId, filePath, content)
-    const existing = openFiles.find((f) => f.path === filePath)
+    const existing = openFilesRef.current.find((f) => f.path === filePath)
     if (existing) setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content, originalContent: content, modified: false } : f))
-  }, [openFiles, sessionId])
+  }, [sessionId])
 
   const handleExecuteCommand = useCallback((cmd: string) => { window.api.ssh.write(sessionId, cmd + '\n') }, [sessionId])
   const handleCursorChange = useCallback((line: number, col: number) => { setCursorLine(line); setCursorCol(col) }, [])
@@ -332,7 +343,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath }: WorkspacePanelPro
                   </button>
                 </div>
                 <div className="flex-1 overflow-hidden">
-                  {bottomTab === 'terminal' && <WorkspaceTerminal sessionId={sessionId} rootPath={rootPath} />}
+                  {bottomTab === 'terminal' && <WorkspaceTerminal sessionId={sessionId} rootPath={rootPath} isActive={isActive && showBottom && bottomTab === 'terminal'} />}
                   {bottomTab === 'problems' && <ProblemsPanel diagnostics={diagnostics} onOpenFile={handleFileOpen} />}
                 </div>
               </div>
@@ -417,10 +428,32 @@ function GitChangesPanel({ sessionId, rootPath, gitChanges, onOpenFile, onOpenDi
 }
 
 // ===== Integrated Terminal =====
-function WorkspaceTerminal({ sessionId, rootPath }: { sessionId: string; rootPath: string }) {
+function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: string; rootPath: string; isActive: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerminal | null>(null)
   const cdSentRef = useRef(false)
+  const isActiveRef = useRef(isActive)
+  const pendingOutputRef = useRef('')
+  const outputRafRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    isActiveRef.current = isActive
+    if (!isActive) {
+      if (outputRafRef.current !== null) {
+        cancelAnimationFrame(outputRafRef.current)
+        outputRafRef.current = null
+      }
+      return
+    }
+    if (termRef.current && pendingOutputRef.current && outputRafRef.current === null) {
+      outputRafRef.current = requestAnimationFrame(() => {
+        outputRafRef.current = null
+        if (!termRef.current || !pendingOutputRef.current || !isActiveRef.current) return
+        termRef.current.write(pendingOutputRef.current)
+        pendingOutputRef.current = ''
+      })
+    }
+  }, [isActive])
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return
@@ -459,18 +492,16 @@ function WorkspaceTerminal({ sessionId, rootPath }: { sessionId: string; rootPat
     }
     currentContainer.addEventListener('contextmenu', handleContextMenu)
 
-    let pendingOutput = ''
-    let outputRafId: number | null = null
     const flushOutput = () => {
-      outputRafId = null
-      if (!pendingOutput) return
-      term.write(pendingOutput)
-      pendingOutput = ''
+      outputRafRef.current = null
+      if (!pendingOutputRef.current || !isActiveRef.current) return
+      term.write(pendingOutputRef.current)
+      pendingOutputRef.current = ''
     }
     const queueOutput = (data: string) => {
-      pendingOutput += data
-      if (outputRafId === null) {
-        outputRafId = requestAnimationFrame(flushOutput)
+      pendingOutputRef.current += data
+      if (isActiveRef.current && outputRafRef.current === null) {
+        outputRafRef.current = requestAnimationFrame(flushOutput)
       }
     }
 
@@ -493,13 +524,21 @@ function WorkspaceTerminal({ sessionId, rootPath }: { sessionId: string; rootPat
       removeData()
       ro.disconnect()
       clearTimeout(debounceTimer)
-      if (outputRafId !== null) cancelAnimationFrame(outputRafId)
-      pendingOutput = ''
+      if (outputRafRef.current !== null) cancelAnimationFrame(outputRafRef.current)
+      pendingOutputRef.current = ''
       currentContainer.removeEventListener('contextmenu', handleContextMenu)
       term.dispose()
       termRef.current = null
     }
   }, [sessionId, rootPath])
+
+  useEffect(() => {
+    if (!isActive) return
+    if (!termRef.current) return
+    if (termRef.current && termRef.current.element && termRef.current.element.clientWidth > 0) {
+      termRef.current.focus()
+    }
+  }, [isActive])
 
   return <div ref={containerRef} className="w-full h-full" style={{ minHeight: 0, userSelect: 'text' }} />
 }

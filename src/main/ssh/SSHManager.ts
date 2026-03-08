@@ -195,7 +195,7 @@ class SSHManager {
   private cleanupDependents(sessionId: string): void {
     try { sftpManager.closeSFTP(sessionId) } catch { /* ignore */ }
     try { portForwardManager.removeAllForwards(sessionId) } catch { /* ignore */ }
-    try { serverMonitor.stop(sessionId) } catch { /* ignore */ }
+    try { serverMonitor.stop(sessionId, true) } catch { /* ignore */ }
     try { this.closeAllLspChannels(sessionId) } catch { /* ignore */ }
   }
 
