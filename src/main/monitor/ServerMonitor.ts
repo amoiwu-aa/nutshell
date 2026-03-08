@@ -95,6 +95,7 @@ class ServerMonitor {
   private prevNetworkStats: Map<string, { time: number; total: { rx: number; tx: number }; interfaces: Map<string, { rx: number; tx: number }> }> = new Map()
   private prevCpuStats: Map<string, CpuSnapshot> = new Map()
   private enabledModules: Map<string, MonitorModules> = new Map()
+  private inFlightSessions: Set<string> = new Set()
 
   async start(sessionId: string, intervalMs: number = 3000, modules?: MonitorModules): Promise<void> {
     this.stop(sessionId)
@@ -107,10 +108,14 @@ class ServerMonitor {
     }
 
     const timer = setInterval(async () => {
+      if (this.inFlightSessions.has(sessionId)) return
+      this.inFlightSessions.add(sessionId)
       try {
         await this.collectAndSend(sessionId)
       } catch {
         this.stop(sessionId)
+      } finally {
+        this.inFlightSessions.delete(sessionId)
       }
     }, intervalMs)
 
@@ -127,6 +132,7 @@ class ServerMonitor {
       clearInterval(timer)
       this.intervals.delete(sessionId)
     }
+    this.inFlightSessions.delete(sessionId)
     this.prevNetworkStats.delete(sessionId)
     this.prevCpuStats.delete(sessionId)
     this.enabledModules.delete(sessionId)

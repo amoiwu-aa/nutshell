@@ -424,6 +424,7 @@ function WorkspaceTerminal({ sessionId, rootPath }: { sessionId: string; rootPat
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return
+    const currentContainer = containerRef.current
     const term = new XTerminal({
       theme: {
         background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad',
@@ -450,15 +451,31 @@ function WorkspaceTerminal({ sessionId, rootPath }: { sessionId: string; rootPat
       if (e.ctrlKey && e.shiftKey && e.key === 'V') { navigator.clipboard.readText().then((text) => { if (text) window.api.ssh.write(sessionId, text) }); return false }
       return true
     })
-    containerRef.current.addEventListener('contextmenu', (e: MouseEvent) => {
+    const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault()
       const s = term.getSelection()
       if (s) { navigator.clipboard.writeText(s); term.clearSelection() }
       else { navigator.clipboard.readText().then((text) => { if (text) window.api.ssh.write(sessionId, text) }) }
-    })
+    }
+    currentContainer.addEventListener('contextmenu', handleContextMenu)
+
+    let pendingOutput = ''
+    let outputRafId: number | null = null
+    const flushOutput = () => {
+      outputRafId = null
+      if (!pendingOutput) return
+      term.write(pendingOutput)
+      pendingOutput = ''
+    }
+    const queueOutput = (data: string) => {
+      pendingOutput += data
+      if (outputRafId === null) {
+        outputRafId = requestAnimationFrame(flushOutput)
+      }
+    }
 
     term.onData((data) => window.api.ssh.write(sessionId, data))
-    const removeData = window.api.ssh.onData((sid: string, data: string) => { if (sid === sessionId) term.write(data) })
+    const removeData = window.api.ssh.onData((sid: string, data: string) => { if (sid === sessionId) queueOutput(data) })
 
     if (!cdSentRef.current) {
       cdSentRef.current = true
@@ -472,7 +489,16 @@ function WorkspaceTerminal({ sessionId, rootPath }: { sessionId: string; rootPat
       debounceTimer = setTimeout(() => { try { if (containerRef.current && containerRef.current.offsetWidth > 0) fit.fit() } catch {} }, 100)
     })
     ro.observe(containerRef.current)
-    return () => { removeData(); ro.disconnect(); clearTimeout(debounceTimer); term.dispose(); termRef.current = null }
+    return () => {
+      removeData()
+      ro.disconnect()
+      clearTimeout(debounceTimer)
+      if (outputRafId !== null) cancelAnimationFrame(outputRafId)
+      pendingOutput = ''
+      currentContainer.removeEventListener('contextmenu', handleContextMenu)
+      term.dispose()
+      termRef.current = null
+    }
   }, [sessionId, rootPath])
 
   return <div ref={containerRef} className="w-full h-full" style={{ minHeight: 0, userSelect: 'text' }} />

@@ -21,12 +21,17 @@ import { useTransferStore } from './stores/transferStore'
 import { v4 as uuidv4 } from 'uuid'
 
 function AppContent() {
-  const {
-    setConnections, addTab, tabs, activeTabId, updateTab,
-    monitorPanelVisible, bottomPanelVisible, bottomPanelHeight,
-    setBottomPanelHeight
-  } = useConnectionStore()
-  const { loadSettings, setSettings, setSettingsMemOnly } = useSettingsStore()
+  const setConnections = useConnectionStore((state) => state.setConnections)
+  const addTab = useConnectionStore((state) => state.addTab)
+  const tabs = useConnectionStore((state) => state.tabs)
+  const activeTabId = useConnectionStore((state) => state.activeTabId)
+  const monitorPanelVisible = useConnectionStore((state) => state.monitorPanelVisible)
+  const bottomPanelVisible = useConnectionStore((state) => state.bottomPanelVisible)
+  const bottomPanelHeight = useConnectionStore((state) => state.bottomPanelHeight)
+  const setBottomPanelHeight = useConnectionStore((state) => state.setBottomPanelHeight)
+  const loadSettings = useSettingsStore((state) => state.loadSettings)
+  const setSettings = useSettingsStore((state) => state.setSettings)
+  const setSettingsMemOnly = useSettingsStore((state) => state.setSettingsMemOnly)
   const { toast } = useToast()
   const [showSnippets, setShowSnippets] = useState(false)
   const [showSettings, setShowSettings] = useState(false)

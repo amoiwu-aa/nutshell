@@ -8,7 +8,6 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { Search, X, ChevronUp, ChevronDown, SplitSquareHorizontal, Columns, Sparkles, Copy, ClipboardPaste, TextSelect, Eraser } from 'lucide-react'
 import { AIAssistant } from './AIAssistant'
 import { cn } from '../../lib/utils'
-import { useConnectionStore } from '../../stores/connectionStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import '@xterm/xterm/css/xterm.css'
 
@@ -86,13 +85,24 @@ function TerminalInstance({
   const [searchText, setSearchText] = useState('')
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [copyToast, setCopyToast] = useState(false)
-  const settings = useSettingsStore(state => state.settings)
-  const updateTab = useConnectionStore(state => state.updateTab)
+  const copyToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingOutputRef = useRef('')
+  const outputRafRef = useRef<number | null>(null)
+  const selectedTerminalTheme = useSettingsStore((state) => state.settings.terminalTheme)
+  const fontSize = useSettingsStore((state) => state.settings.fontSize)
+  const fontFamily = useSettingsStore((state) => state.settings.fontFamily)
+  const colorTheme = useSettingsStore((state) => (state.settings as any).colorTheme as string | undefined)
+
+  const showCopyToast = useCallback(() => {
+    setCopyToast(true)
+    if (copyToastTimerRef.current) clearTimeout(copyToastTimerRef.current)
+    copyToastTimerRef.current = setTimeout(() => setCopyToast(false), 1200)
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current) return
 
-    const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
+    const theme = terminalThemes[selectedTerminalTheme] || terminalThemes.default
     const isGlass = document.documentElement.classList.contains('theme-glass')
     const termTheme = isGlass
       ? { ...theme, background: 'transparent' }
@@ -100,8 +110,8 @@ function TerminalInstance({
 
     const terminal = new Terminal({
       theme: termTheme,
-      fontSize: settings.fontSize,
-      fontFamily: settings.fontFamily,
+      fontSize,
+      fontFamily,
       cursorBlink: true,
       cursorStyle: 'bar',
       scrollback: 10000,
@@ -157,8 +167,7 @@ function TerminalInstance({
         if (selection) {
           navigator.clipboard.writeText(selection)
           terminal.clearSelection()
-          setCopyToast(true)
-          setTimeout(() => setCopyToast(false), 1200)
+          showCopyToast()
           return false
         }
       }
@@ -166,18 +175,32 @@ function TerminalInstance({
     })
 
     // Right-click opens context menu
-    containerRef.current.addEventListener('contextmenu', (e: MouseEvent) => {
+    const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault()
       setCtxMenu({ x: e.clientX, y: e.clientY })
-    })
+    }
+    containerRef.current.addEventListener('contextmenu', handleContextMenu)
+
+    const flushBufferedOutput = () => {
+      outputRafRef.current = null
+      if (!pendingOutputRef.current) return
+      terminal.write(pendingOutputRef.current)
+      pendingOutputRef.current = ''
+    }
+
+    const queueOutput = (data: string) => {
+      pendingOutputRef.current += data
+      if (outputRafRef.current === null) {
+        outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
+      }
+    }
 
     // Copy on select (auto-copy when text is selected)
     terminal.onSelectionChange(() => {
       const selection = terminal.getSelection()
       if (selection) {
         navigator.clipboard.writeText(selection)
-        setCopyToast(true)
-        setTimeout(() => setCopyToast(false), 1200)
+        showCopyToast()
       }
     })
 
@@ -188,11 +211,11 @@ function TerminalInstance({
       if (cols !== lastCols || rows !== lastRows) { lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows) }
     })
 
-    const removeDataListener = window.api.ssh.onData((sid, data) => { if (sid === sessionId) terminal.write(data) })
-    const removeCloseListener = window.api.ssh.onClose((sid) => { if (sid === sessionId) terminal.write('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n') })
-    const removeErrorListener = window.api.ssh.onError((sid, error) => { if (sid === sessionId) terminal.write(`\r\n\x1b[31m[错误: ${error}]\x1b[0m\r\n`) })
-    const removeReconnectingListener = window.api.ssh.onReconnecting?.((sid, attempt) => { if (sid === sessionId) terminal.write(`\r\n\x1b[33m[正在重连... 第 ${attempt} 次尝试]\x1b[0m\r\n`) })
-    const removeReconnectedListener = window.api.ssh.onReconnected?.((sid) => { if (sid === sessionId) terminal.write('\r\n\x1b[32m[重连成功]\x1b[0m\r\n') })
+    const removeDataListener = window.api.ssh.onData((sid, data) => { if (sid === sessionId) queueOutput(data) })
+    const removeCloseListener = window.api.ssh.onClose((sid) => { if (sid === sessionId) queueOutput('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n') })
+    const removeErrorListener = window.api.ssh.onError((sid, error) => { if (sid === sessionId) queueOutput(`\r\n\x1b[31m[错误: ${error}]\x1b[0m\r\n`) })
+    const removeReconnectingListener = window.api.ssh.onReconnecting?.((sid, attempt) => { if (sid === sessionId) queueOutput(`\r\n\x1b[33m[正在重连... 第 ${attempt} 次尝试]\x1b[0m\r\n`) })
+    const removeReconnectedListener = window.api.ssh.onReconnected?.((sid) => { if (sid === sessionId) queueOutput('\r\n\x1b[32m[重连成功]\x1b[0m\r\n') })
 
     let isDisposed = false
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
@@ -235,10 +258,16 @@ function TerminalInstance({
     return () => {
       isDisposed = true
       if (resizeTimer) clearTimeout(resizeTimer)
+      if (copyToastTimerRef.current) clearTimeout(copyToastTimerRef.current)
+      if (outputRafRef.current !== null) {
+        cancelAnimationFrame(outputRafRef.current)
+        outputRafRef.current = null
+      }
+      pendingOutputRef.current = ''
       onTerminalRef?.(null)
       removeDataListener(); removeCloseListener(); removeErrorListener()
       removeReconnectingListener?.(); removeReconnectedListener?.()
-      resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown)
+      resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown); currentContainer.removeEventListener('contextmenu', handleContextMenu)
       try { terminal.dispose() } catch { }
       terminalRef.current = null
     }
@@ -249,18 +278,18 @@ function TerminalInstance({
     // @ts-ignore
     if (!terminal || terminal._core?._isDisposed || (terminal as any)._isDisposed) return
     try {
-      const theme = terminalThemes[settings.terminalTheme] || terminalThemes.default
+      const theme = terminalThemes[selectedTerminalTheme] || terminalThemes.default
       const isGlass = document.documentElement.classList.contains('theme-glass')
       const termTheme = isGlass
         ? { ...theme, background: 'transparent' }
         : theme
 
       terminal.options.theme = termTheme
-      terminal.options.fontSize = settings.fontSize
-      terminal.options.fontFamily = settings.fontFamily
+      terminal.options.fontSize = fontSize
+      terminal.options.fontFamily = fontFamily
       fitAddonRef.current?.fit()
     } catch { }
-  }, [settings.terminalTheme, settings.fontSize, settings.fontFamily, (settings as any).colorTheme])
+  }, [selectedTerminalTheme, fontSize, fontFamily, colorTheme])
 
   const handleSearch = useCallback(
     (direction: 'next' | 'prev') => {
@@ -273,9 +302,9 @@ function TerminalInstance({
 
   return (
     <div className={cn('flex flex-col relative', className)} style={{
-      backgroundColor: (settings as any).colorTheme === 'theme-glass'
+      backgroundColor: colorTheme === 'theme-glass'
         ? 'rgba(15, 25, 45, 0.35)'
-        : (terminalThemes[settings.terminalTheme] || terminalThemes.default).background
+        : (terminalThemes[selectedTerminalTheme] || terminalThemes.default).background
     }}>
       {showSearch && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-card border-b border-border shrink-0">
@@ -315,8 +344,7 @@ function TerminalInstance({
                   if (sel) {
                     navigator.clipboard.writeText(sel)
                     terminalRef.current?.clearSelection()
-                    setCopyToast(true)
-                    setTimeout(() => setCopyToast(false), 1200)
+                    showCopyToast()
                   }
                   setCtxMenu(null)
                 }}
