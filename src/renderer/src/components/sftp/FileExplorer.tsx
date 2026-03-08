@@ -17,6 +17,30 @@ import { cn, formatBytes, formatDate } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
 import { useConnectionStore } from '../../stores/connectionStore'
 
+// File extension → icon color mapping
+const fileIconColor = (filename: string): string => {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const colors: Record<string, string> = {
+    js: '#f7df1e', ts: '#3178c6', jsx: '#61dafb', tsx: '#61dafb',
+    py: '#3776ab', rb: '#cc342d', go: '#00add8', rs: '#dea584',
+    java: '#ed8b00', kt: '#7f52ff', swift: '#fa7343', c: '#a8b9cc',
+    cpp: '#00599c', h: '#a8b9cc', cs: '#239120', php: '#777bb4',
+    html: '#e34f26', css: '#1572b6', scss: '#cf649a', less: '#1d365d',
+    json: '#292929', yaml: '#cb171e', yml: '#cb171e', xml: '#f80',
+    md: '#083fa1', txt: '#6b7280', log: '#6b7280',
+    sh: '#4eaa25', bash: '#4eaa25', zsh: '#4eaa25',
+    sql: '#e38c00', db: '#e38c00',
+    png: '#a855f7', jpg: '#a855f7', jpeg: '#a855f7', gif: '#a855f7',
+    svg: '#ffb13b', ico: '#a855f7', webp: '#a855f7',
+    zip: '#f59e0b', tar: '#f59e0b', gz: '#f59e0b', rar: '#f59e0b',
+    pdf: '#ef4444', doc: '#2b579a', docx: '#2b579a', xls: '#217346', xlsx: '#217346',
+    conf: '#6b7280', cfg: '#6b7280', ini: '#6b7280', env: '#6b7280',
+    docker: '#2496ed', dockerfile: '#2496ed',
+    vue: '#42b883', svelte: '#ff3e00', astro: '#bc52ee',
+  }
+  return colors[ext] || '#9ca3af'
+}
+
 interface FileInfo {
   filename: string
   isDirectory: boolean
@@ -106,7 +130,7 @@ function FilePanel({
     <div
       className={cn(
         'flex flex-col flex-1 border rounded-lg overflow-hidden bg-background transition-colors',
-        isRemote && dragOver ? 'border-primary border-2 bg-primary/5' : 'border-border'
+        isRemote && dragOver ? 'border-primary border-2 bg-primary/5 shadow-[0_0_20px_hsl(var(--primary)/0.15)]' : 'border-border'
       )}
       onDrop={onDrop}
       onDragOver={onDragOver}
@@ -115,7 +139,7 @@ function FilePanel({
     >
       {/* Panel header */}
       <div className="flex items-center justify-between px-3 py-2 bg-card border-b border-border">
-        <span className="text-sm font-medium">{title}</span>
+        <div className="flex items-center gap-2"><div className="w-5 h-5 rounded-md bg-primary/15 flex items-center justify-center"><HardDrive className="w-3 h-3 text-primary" /></div><span className="text-sm font-semibold">{title}</span></div>
         <div className="flex items-center gap-1">
           <button onClick={onUp} className="p-1 hover:bg-accent rounded transition-colors" title="上级目录">
             <ArrowUp className="w-3.5 h-3.5" />
@@ -230,7 +254,7 @@ function FilePanel({
                     {file.isDirectory ? (
                       <FolderOpen className="w-4 h-4 text-yellow-500 shrink-0" />
                     ) : (
-                      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <FileText className="w-4 h-4 shrink-0" style={{ color: fileIconColor(file.filename) }} />
                     )}
                     <span className="truncate">{file.filename}</span>
                   </td>
@@ -633,7 +657,7 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
         <button
           onClick={handleUpload}
           disabled={selectedLocal.size === 0 || transferring}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm disabled:opacity-50 hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm disabled:opacity-50 hover:bg-primary/90 transition-colors btn-glow"
         >
           <Upload className="w-3.5 h-3.5" />
           上传
@@ -641,7 +665,7 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
         <button
           onClick={handleDownload}
           disabled={selectedRemote.size === 0 || transferring}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm disabled:opacity-50 hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm disabled:opacity-50 hover:bg-primary/90 transition-colors btn-glow"
         >
           <Download className="w-3.5 h-3.5" />
           下载

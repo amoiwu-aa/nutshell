@@ -207,6 +207,13 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   }
 
   const stateColor = (state: string) => state === 'running' ? 'text-green-500' : state === 'exited' ? 'text-red-500' : 'text-muted-foreground'
+  const StateDot = ({ state: s }: { state: string }) => (
+    <span className={cn('inline-block w-2 h-2 rounded-full mr-1.5 shrink-0',
+      s === 'running' && 'bg-green-500 shadow-[0_0_6px_#22c55e80]',
+      s === 'exited' && 'bg-red-500 shadow-[0_0_6px_#ef444480]',
+      s !== 'running' && s !== 'exited' && 'bg-muted-foreground'
+    )} style={s === 'running' ? { animation: 'status-pulse 2s ease-in-out infinite' } : undefined} />
+  )
 
   const filtered = (items: any[]) => items.filter((i) =>
     !searchQuery || JSON.stringify(i).toLowerCase().includes(searchQuery.toLowerCase())
@@ -226,7 +233,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center bg-card border border-border rounded-lg p-0.5">
           {tabs.map((t) => (
-            <button key={t.id} onClick={() => setActiveView(t.id)} className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', activeView === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
+            <button key={t.id} onClick={() => setActiveView(t.id)} className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors', activeView === t.id ? 'bg-primary text-primary-foreground shadow-[0_0_10px_hsl(var(--primary)/0.3)]' : 'text-muted-foreground hover:text-foreground hover:bg-accent')}>
               <t.icon className="w-3.5 h-3.5" />{t.label}
             </button>
           ))}
@@ -236,9 +243,9 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
             <Search className="w-3.5 h-3.5 text-muted-foreground" />
             <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜索..." className="w-40 bg-transparent text-sm outline-none" />
           </div>
-          {activeView === 'containers' && <button onClick={() => setShowCreateContainer(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90"><Plus className="w-3.5 h-3.5" />创建容器</button>}
+          {activeView === 'containers' && <button onClick={() => setShowCreateContainer(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 btn-glow"><Plus className="w-3.5 h-3.5" />创建容器</button>}
           {activeView === 'images' && <button onClick={() => setShowRegistryMirrors(true)} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent" title="镜像源设置"><Settings className="w-4 h-4" /></button>}
-          {activeView === 'networks' && <button onClick={() => setShowCreateNetwork(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90"><Plus className="w-3.5 h-3.5" />创建网络</button>}
+          {activeView === 'networks' && <button onClick={() => setShowCreateNetwork(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 btn-glow"><Plus className="w-3.5 h-3.5" />创建网络</button>}
           <button onClick={() => { if (activeView === 'containers') loadContainers(); else if (activeView === 'images') loadImages(); else if (activeView === 'networks') loadNetworks(); else loadCompose() }} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent">
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
           </button>
@@ -274,7 +281,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                     <div className="text-xs text-muted-foreground font-mono">{c.id.substring(0, 12)}</div>
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground break-all">{c.image}</td>
-                  <td className="px-4 py-2.5"><span className={stateColor(c.state)}>{c.status}</span></td>
+                  <td className="px-4 py-2.5"><span className={cn("flex items-center", stateColor(c.state))}><StateDot state={c.state} />{c.status}</span></td>
                   <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono break-all">{c.ports || '-'}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-center gap-1">

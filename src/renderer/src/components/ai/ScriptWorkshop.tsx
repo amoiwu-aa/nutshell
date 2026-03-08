@@ -136,7 +136,7 @@ export function ScriptWorkshop({ isOpen, onClose, sessionId }: ScriptWorkshopPro
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
+            <div className="w-6 h-6 rounded-md bg-primary/15 flex items-center justify-center"><Sparkles className="w-3.5 h-3.5 text-primary" /></div>
             <h2 className="text-sm font-semibold">AI 脚本工坊</h2>
             {!sessionId && <span className="text-xs text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded">未连接</span>}
           </div>
@@ -157,7 +157,7 @@ export function ScriptWorkshop({ isOpen, onClose, sessionId }: ScriptWorkshopPro
             return (
               <button key={t.id} onClick={() => { setActiveType(t.id); setSaveResult(''); setExecResult('') }}
                 className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors relative',
-                  activeType === t.id ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80')}>
+                  activeType === t.id ? 'bg-primary text-primary-foreground shadow-[0_0_10px_hsl(var(--primary)/0.3)]' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80')}>
                 <t.icon className="w-3.5 h-3.5" />{t.label}
                 {hasCode && activeType !== t.id && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full" />}
               </button>
@@ -215,7 +215,7 @@ export function ScriptWorkshop({ isOpen, onClose, sessionId }: ScriptWorkshopPro
                 className="flex-1 w-full min-h-[80px] px-3 py-2 bg-background border border-input rounded-lg text-xs outline-none resize-none focus:ring-1 focus:ring-ring" />
 
               <button onClick={handleGenerate} disabled={loading || !currentState.description.trim()}
-                className="flex items-center justify-center gap-2 w-full py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium disabled:opacity-50 hover:bg-primary/90">
+                className="flex items-center justify-center gap-2 w-full py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium disabled:opacity-50 hover:bg-primary/90 btn-glow">
                 {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                 {loading ? '生成中...' : '生成 (Ctrl+Enter)'}
               </button>
