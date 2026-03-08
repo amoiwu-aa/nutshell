@@ -28,89 +28,89 @@
 
   /* Default Dark Blue – uses blue as primary accent */
   .dark {
-    --background: 222 20% 7%;
+    --background: 222 25% 6%;
     --foreground: 210 40% 98%;
-    --card: 222 22% 9%;
+    --card: 222 20% 10%;
     --card-foreground: 210 40% 98%;
-    --popover: 222 22% 9%;
+    --popover: 222 22% 11%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 20% 7%;
-    --secondary: 222 18% 13%;
+    --primary: 217 92% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 18% 14%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 222 18% 13%;
-    --muted-foreground: 215 20% 58%;
-    --accent: 222 18% 16%;
+    --muted: 222 18% 14%;
+    --muted-foreground: 215 20% 62%;
+    --accent: 222 20% 17%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 50.6%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 98%;
-    --border: 222 18% 16%;
-    --input: 222 18% 16%;
-    --ring: 217 91% 60%;
+    --border: 222 15% 20%;
+    --input: 222 18% 17%;
+    --ring: 217 92% 62%;
     --radius: 0.75rem;
   }
 
   /* Midnight Blue theme (Oceanic Deep) */
   .dark.theme-midnight {
-    --background: 228 30% 6%;
-    --foreground: 220 40% 98%;
-    --card: 228 35% 8%;
-    --card-foreground: 220 40% 98%;
-    --popover: 228 35% 8%;
-    --popover-foreground: 220 40% 98%;
-    --primary: 225 85% 65%;
-    --primary-foreground: 228 30% 6%;
-    --secondary: 228 30% 12%;
-    --secondary-foreground: 220 40% 98%;
-    --muted: 228 30% 12%;
-    --muted-foreground: 220 20% 65%;
-    --accent: 228 30% 16%;
-    --accent-foreground: 220 40% 98%;
-    --border: 228 30% 16%;
-    --input: 228 30% 16%;
-    --ring: 225 85% 65%;
+    --background: 230 35% 5%;
+    --foreground: 215 50% 96%;
+    --card: 228 30% 10%;
+    --card-foreground: 215 50% 96%;
+    --popover: 228 32% 11%;
+    --popover-foreground: 215 50% 96%;
+    --primary: 220 90% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 228 28% 15%;
+    --secondary-foreground: 215 50% 96%;
+    --muted: 228 28% 15%;
+    --muted-foreground: 220 25% 60%;
+    --accent: 225 30% 18%;
+    --accent-foreground: 215 50% 96%;
+    --border: 225 25% 22%;
+    --input: 228 28% 17%;
+    --ring: 220 90% 65%;
   }
 
   /* Forest Green theme (Cyber Matrix) */
   .dark.theme-forest {
-    --background: 155 15% 6%;
-    --foreground: 140 20% 98%;
-    --card: 155 18% 8%;
-    --card-foreground: 140 20% 98%;
-    --popover: 155 18% 8%;
-    --popover-foreground: 140 20% 98%;
-    --primary: 150 70% 50%;
-    --primary-foreground: 155 15% 6%;
-    --secondary: 155 15% 12%;
-    --secondary-foreground: 140 20% 98%;
-    --muted: 155 15% 12%;
-    --muted-foreground: 140 10% 60%;
-    --accent: 155 15% 16%;
-    --accent-foreground: 140 20% 98%;
-    --border: 155 15% 16%;
-    --input: 155 15% 16%;
-    --ring: 150 70% 50%;
+    --background: 160 20% 5%;
+    --foreground: 140 25% 96%;
+    --card: 155 18% 10%;
+    --card-foreground: 140 25% 96%;
+    --popover: 155 20% 11%;
+    --popover-foreground: 140 25% 96%;
+    --primary: 152 75% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 155 16% 15%;
+    --secondary-foreground: 140 25% 96%;
+    --muted: 155 16% 15%;
+    --muted-foreground: 150 12% 58%;
+    --accent: 155 18% 18%;
+    --accent-foreground: 140 25% 96%;
+    --border: 155 14% 22%;
+    --input: 155 16% 17%;
+    --ring: 152 75% 48%;
   }
 
   /* Rose theme (Premium Ruby/Valentine) */
   .dark.theme-rose {
-    --background: 346 25% 6%;
-    --foreground: 340 20% 98%;
-    --card: 346 30% 8%;
-    --card-foreground: 340 20% 98%;
-    --popover: 346 30% 8%;
-    --popover-foreground: 340 20% 98%;
-    --primary: 346 80% 60%;
-    --primary-foreground: 340 20% 98%;
-    --secondary: 346 25% 12%;
-    --secondary-foreground: 340 20% 98%;
-    --muted: 346 25% 12%;
-    --muted-foreground: 340 15% 65%;
-    --accent: 346 25% 16%;
-    --accent-foreground: 340 20% 98%;
-    --border: 346 25% 16%;
-    --input: 346 25% 16%;
-    --ring: 346 80% 60%;
+    --background: 348 28% 5%;
+    --foreground: 340 25% 96%;
+    --card: 346 25% 10%;
+    --card-foreground: 340 25% 96%;
+    --popover: 346 28% 11%;
+    --popover-foreground: 340 25% 96%;
+    --primary: 346 85% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 346 22% 15%;
+    --secondary-foreground: 340 25% 96%;
+    --muted: 346 22% 15%;
+    --muted-foreground: 340 18% 60%;
+    --accent: 346 24% 18%;
+    --accent-foreground: 340 25% 96%;
+    --border: 346 20% 22%;
+    --input: 346 22% 17%;
+    --ring: 346 85% 62%;
   }
 
   /* Glass – Transparent frosted glassmorphism */
@@ -138,48 +138,48 @@
 
   /* Sakura – Cute pastel lavender-pink */
   .dark.theme-sakura {
-    --background: 280 20% 8%;
-    --foreground: 300 20% 96%;
-    --card: 280 25% 11%;
-    --card-foreground: 300 20% 96%;
-    --popover: 280 25% 11%;
-    --popover-foreground: 300 20% 96%;
-    --primary: 300 70% 65%;
-    --primary-foreground: 280 20% 8%;
-    --secondary: 280 20% 15%;
-    --secondary-foreground: 300 20% 96%;
-    --muted: 280 20% 15%;
-    --muted-foreground: 280 15% 58%;
-    --accent: 290 25% 18%;
-    --accent-foreground: 300 20% 96%;
+    --background: 275 22% 6%;
+    --foreground: 290 25% 96%;
+    --card: 278 22% 11%;
+    --card-foreground: 290 25% 96%;
+    --popover: 278 24% 12%;
+    --popover-foreground: 290 25% 96%;
+    --primary: 295 72% 68%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 278 18% 16%;
+    --secondary-foreground: 290 25% 96%;
+    --muted: 278 18% 16%;
+    --muted-foreground: 280 16% 56%;
+    --accent: 282 22% 20%;
+    --accent-foreground: 290 25% 96%;
     --destructive: 0 62.8% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 280 20% 18%;
-    --input: 280 20% 18%;
-    --ring: 300 70% 65%;
+    --border: 278 18% 24%;
+    --input: 278 18% 19%;
+    --ring: 295 72% 68%;
   }
 
   /* Cyberpunk – Neon orange on dark */
   .dark.theme-cyberpunk {
-    --background: 240 10% 5%;
-    --foreground: 40 100% 97%;
-    --card: 240 12% 8%;
-    --card-foreground: 40 100% 97%;
-    --popover: 240 12% 8%;
-    --popover-foreground: 40 100% 97%;
-    --primary: 25 95% 55%;
-    --primary-foreground: 240 10% 5%;
-    --secondary: 240 10% 13%;
-    --secondary-foreground: 40 100% 97%;
-    --muted: 240 10% 13%;
-    --muted-foreground: 40 10% 55%;
-    --accent: 240 10% 16%;
-    --accent-foreground: 40 100% 97%;
+    --background: 250 15% 4%;
+    --foreground: 45 90% 95%;
+    --card: 248 12% 9%;
+    --card-foreground: 45 90% 95%;
+    --popover: 248 14% 10%;
+    --popover-foreground: 45 90% 95%;
+    --primary: 25 98% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 248 10% 14%;
+    --secondary-foreground: 45 90% 95%;
+    --muted: 248 10% 14%;
+    --muted-foreground: 40 12% 52%;
+    --accent: 248 12% 17%;
+    --accent-foreground: 45 90% 95%;
     --destructive: 0 62.8% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 10% 16%;
-    --input: 240 10% 16%;
-    --ring: 25 95% 55%;
+    --border: 248 10% 20%;
+    --input: 248 10% 16%;
+    --ring: 25 98% 56%;
   }
 }
 
@@ -204,6 +204,133 @@
     display: flex;
     flex-direction: column;
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   Theme depth enhancements — subtle gradients & glow
+   ═══════════════════════════════════════════════════════ */
+
+/* Midnight — deep ocean gradient */
+.theme-midnight::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 800px 500px at 20% 20%, hsla(220, 80%, 30%, 0.15) 0%, transparent 100%),
+    radial-gradient(ellipse 600px 400px at 80% 80%, hsla(240, 60%, 25%, 0.12) 0%, transparent 100%),
+    hsl(230, 35%, 5%);
+}
+
+.theme-midnight .bg-card {
+  box-shadow: inset 0 1px 0 0 hsla(220, 80%, 70%, 0.04);
+}
+
+.theme-midnight .bg-primary {
+  box-shadow: 0 0 14px hsla(220, 90%, 65%, 0.25);
+}
+
+/* Forest — emerald ambient glow */
+.theme-forest::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 700px 450px at 15% 80%, hsla(152, 70%, 30%, 0.15) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 400px at 85% 25%, hsla(140, 50%, 25%, 0.1) 0%, transparent 100%),
+    hsl(160, 20%, 5%);
+}
+
+.theme-forest .bg-card {
+  box-shadow: inset 0 1px 0 0 hsla(152, 70%, 60%, 0.04);
+}
+
+.theme-forest .bg-primary {
+  box-shadow: 0 0 14px hsla(152, 75%, 48%, 0.25);
+}
+
+/* Rose — warm ruby ambient */
+.theme-rose::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 600px 500px at 75% 20%, hsla(346, 70%, 35%, 0.14) 0%, transparent 100%),
+    radial-gradient(ellipse 700px 400px at 20% 75%, hsla(330, 50%, 25%, 0.1) 0%, transparent 100%),
+    hsl(348, 28%, 5%);
+}
+
+.theme-rose .bg-card {
+  box-shadow: inset 0 1px 0 0 hsla(346, 80%, 70%, 0.04);
+}
+
+.theme-rose .bg-primary {
+  box-shadow: 0 0 14px hsla(346, 85%, 62%, 0.25);
+}
+
+/* Sakura — dreamy pastel glow */
+.theme-sakura::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 600px 450px at 25% 30%, hsla(295, 60%, 40%, 0.12) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 400px at 75% 70%, hsla(320, 50%, 35%, 0.1) 0%, transparent 100%),
+    hsl(275, 22%, 6%);
+}
+
+.theme-sakura .bg-card {
+  box-shadow: inset 0 1px 0 0 hsla(295, 70%, 75%, 0.04);
+}
+
+.theme-sakura .bg-primary {
+  box-shadow: 0 0 14px hsla(295, 72%, 68%, 0.25);
+}
+
+/* Cyberpunk — neon ember glow */
+.theme-cyberpunk::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 700px 400px at 70% 15%, hsla(25, 90%, 40%, 0.14) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 500px at 15% 85%, hsla(270, 60%, 30%, 0.1) 0%, transparent 100%),
+    hsl(250, 15%, 4%);
+}
+
+.theme-cyberpunk .bg-card {
+  box-shadow: inset 0 1px 0 0 hsla(25, 90%, 60%, 0.05);
+}
+
+.theme-cyberpunk .bg-primary {
+  box-shadow: 0 0 16px hsla(25, 98%, 56%, 0.3);
+}
+
+/* Default dark — subtle blue depth */
+.dark:not([class*='theme-'])::before,
+.dark.theme-default::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 700px 500px at 30% 25%, hsla(217, 80%, 35%, 0.1) 0%, transparent 100%),
+    radial-gradient(ellipse 500px 400px at 75% 75%, hsla(230, 50%, 25%, 0.08) 0%, transparent 100%),
+    hsl(222, 25%, 6%);
+}
+
+.dark:not([class*='theme-']) .bg-card,
+.dark.theme-default .bg-card {
+  box-shadow: inset 0 1px 0 0 hsla(217, 80%, 70%, 0.03);
+}
+
+.dark:not([class*='theme-']) .bg-primary,
+.dark.theme-default .bg-primary {
+  box-shadow: 0 0 12px hsla(217, 92%, 62%, 0.2);
 }
 
 /* ═══════════════════════════════════════════════════════
