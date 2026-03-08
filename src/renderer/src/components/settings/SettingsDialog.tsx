@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { X, Sun, Moon, Monitor, Type, Palette, Sparkles, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { useSettingsStore, type AppSettings } from '../../stores/settingsStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 
 interface SettingsDialogProps {
   isOpen: boolean
@@ -37,7 +37,9 @@ const fontFamilies = [
 ]
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
-  const { settings, setSettings } = useSettingsStore()
+  const settings = useSettingsStore((state) => state.settings)
+  const setSettings = useSettingsStore((state) => state.setSettings)
+  const setSettingsMemOnly = useSettingsStore((state) => state.setSettingsMemOnly)
   const [activeSection, setActiveSection] = useState('appearance')
 
   const handleThemeChange = (theme: 'dark' | 'light' | 'system') => {
@@ -70,6 +72,22 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
   // Apply saved color theme on mount
   const colorTheme = (settings as any).colorTheme || ''
+
+  const handleSidebarWidthChange = (value: number) => {
+    setSettingsMemOnly({ sidebarWidth: value })
+  }
+
+  const handleSidebarWidthCommit = () => {
+    setSettings({ sidebarWidth: settings.sidebarWidth })
+  }
+
+  const handleFontSizeChange = (value: number) => {
+    setSettingsMemOnly({ fontSize: value })
+  }
+
+  const handleFontSizeCommit = () => {
+    setSettings({ fontSize: settings.fontSize })
+  }
 
   if (!isOpen) return null
 
@@ -188,9 +206,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     min={200}
                     max={400}
                     value={settings.sidebarWidth}
-                    onChange={(e) =>
-                      setSettings({ sidebarWidth: parseInt(e.target.value) })
-                    }
+                    onChange={(e) => handleSidebarWidthChange(parseInt(e.target.value))}
+                    onPointerUp={handleSidebarWidthCommit}
+                    onKeyUp={handleSidebarWidthCommit}
                     className="w-full"
                   />
                 </div>
@@ -209,7 +227,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     min={10}
                     max={24}
                     value={settings.fontSize}
-                    onChange={(e) => setSettings({ fontSize: parseInt(e.target.value) })}
+                    onChange={(e) => handleFontSizeChange(parseInt(e.target.value))}
+                    onPointerUp={handleFontSizeCommit}
+                    onKeyUp={handleFontSizeCommit}
                     className="w-full"
                   />
                 </div>

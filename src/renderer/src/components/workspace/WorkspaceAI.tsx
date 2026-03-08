@@ -256,9 +256,10 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
   const [activePlanPath, setActivePlanPath] = useState<string | null>(null)
   const [planTodos, setPlanTodos] = useState<PlanTodo[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const { settings, setSettings } = useSettingsStore()
+  const aiSettings = useSettingsStore((state) => (state.settings as any).ai)
+  const setSettings = useSettingsStore((state) => state.setSettings)
 
-  const ai = (settings as any).ai || { provider: 'openai', model: '', maxTokens: 128000 }
+  const ai = aiSettings || { provider: 'openai', model: '', maxTokens: 128000 }
   const currentModel = ai.model || PROVIDERS_MODELS[ai.provider]?.[0] || 'gpt-4o-mini'
   const maxTokens = MODEL_CONTEXT_LIMITS[currentModel] || (ai.provider === 'custom' ? (ai.maxTokens || 128000) : 128000)
   const currentModeInfo = MODES.find((m) => m.id === mode) || MODES[0]

@@ -1,10 +1,13 @@
-import { Wifi, WifiOff, Clock, ArrowUp, ArrowDown } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { WifiOff, Clock, ArrowUp, ArrowDown } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
 import { useConnectionStore } from '../../stores/connectionStore'
 import { useTransferStore } from '../../stores/transferStore'
 
 export function StatusBar() {
-  const { tabs, activeTabId, setBottomPanelActiveTab, setBottomPanelVisible } = useConnectionStore()
+  const tabs = useConnectionStore((state) => state.tabs)
+  const activeTabId = useConnectionStore((state) => state.activeTabId)
+  const setBottomPanelActiveTab = useConnectionStore((state) => state.setBottomPanelActiveTab)
+  const setBottomPanelVisible = useConnectionStore((state) => state.setBottomPanelVisible)
   // Use separate primitive selectors to avoid new-object infinite loop
   const uploadCount = useTransferStore((s) => {
     let count = 0
@@ -23,8 +26,10 @@ export function StatusBar() {
     return () => clearInterval(timer)
   }, [])
 
-  const activeTab = tabs.find((t) => t.id === activeTabId)
-  const connectedCount = tabs.filter((t) => t.connected).length
+  const { activeTab, connectedCount } = useMemo(() => ({
+    activeTab: tabs.find((t) => t.id === activeTabId),
+    connectedCount: tabs.filter((t) => t.connected).length
+  }), [tabs, activeTabId])
   const hasActiveTransfers = uploadCount > 0 || downloadCount > 0
 
   const handleTransferClick = () => {

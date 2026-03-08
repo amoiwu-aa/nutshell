@@ -15,7 +15,8 @@ interface BottomPanelProps {
 }
 
 export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: BottomPanelProps) {
-  const { bottomPanelActiveTab, setBottomPanelActiveTab } = useConnectionStore()
+  const bottomPanelActiveTab = useConnectionStore((state) => state.bottomPanelActiveTab)
+  const setBottomPanelActiveTab = useConnectionStore((state) => state.setBottomPanelActiveTab)
   const activeTransferCount = useTransferStore((s) => {
     let count = 0
     for (const t of s.transfers) if (t.status === 'active') count++

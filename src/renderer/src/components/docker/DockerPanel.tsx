@@ -215,9 +215,40 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
     )} style={s === 'running' ? { animation: 'status-pulse 2s ease-in-out infinite' } : undefined} />
   )
 
-  const filtered = (items: any[]) => items.filter((i) =>
-    !searchQuery || JSON.stringify(i).toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+
+  const filteredContainers = useMemo(() => {
+    if (!normalizedSearch) return containers
+    return containers.filter((container) =>
+      container.name.toLowerCase().includes(normalizedSearch) ||
+      container.image.toLowerCase().includes(normalizedSearch) ||
+      container.status.toLowerCase().includes(normalizedSearch) ||
+      container.state.toLowerCase().includes(normalizedSearch) ||
+      container.ports.toLowerCase().includes(normalizedSearch) ||
+      container.id.toLowerCase().includes(normalizedSearch)
+    )
+  }, [containers, normalizedSearch])
+
+  const filteredImages = useMemo(() => {
+    if (!normalizedSearch) return images
+    return images.filter((image) =>
+      image.repository.toLowerCase().includes(normalizedSearch) ||
+      image.tag.toLowerCase().includes(normalizedSearch) ||
+      image.id.toLowerCase().includes(normalizedSearch) ||
+      image.size.toLowerCase().includes(normalizedSearch) ||
+      image.created.toLowerCase().includes(normalizedSearch)
+    )
+  }, [images, normalizedSearch])
+
+  const filteredNetworks = useMemo(() => {
+    if (!normalizedSearch) return networks
+    return networks.filter((network) =>
+      network.name.toLowerCase().includes(normalizedSearch) ||
+      network.driver.toLowerCase().includes(normalizedSearch) ||
+      network.scope.toLowerCase().includes(normalizedSearch) ||
+      network.id.toLowerCase().includes(normalizedSearch)
+    )
+  }, [networks, normalizedSearch])
 
   // Tab buttons
   const tabs = [
@@ -274,7 +305,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                 <th className="text-left px-4 py-2.5 font-medium">端口</th>
                 <th className="text-center px-4 py-2.5 font-medium">操作</th>
               </tr></thead>
-              <tbody>{filtered(containers).map((c) => (
+              <tbody>{filteredContainers.map((c) => (
                 <tr key={c.id} className="border-b border-border/50 hover:bg-accent/50 align-top">
                   <td className="px-4 py-2.5">
                     <button onClick={() => handleInspect(c.id)} className="font-medium hover:text-primary transition-colors break-all text-left">{c.name}</button>
@@ -328,7 +359,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                   <th className="text-left px-4 py-2.5 font-medium">ID</th><th className="text-left px-4 py-2.5 font-medium">大小</th>
                   <th className="text-center px-4 py-2.5 font-medium w-20">操作</th>
                 </tr></thead>
-                <tbody>{filtered(images).map((i) => (
+                <tbody>{filteredImages.map((i) => (
                   <tr key={i.id} className="border-b border-border/50 hover:bg-accent/50">
                     <td className="px-4 py-2.5 font-medium">{i.repository}</td>
                     <td className="px-4 py-2.5"><span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-xs">{i.tag}</span></td>
@@ -355,7 +386,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
                 <th className="text-left px-4 py-2.5 font-medium">范围</th><th className="text-left px-4 py-2.5 font-medium">ID</th>
                 <th className="text-center px-4 py-2.5 font-medium w-20">操作</th>
               </tr></thead>
-              <tbody>{filtered(networks).map((n) => (
+              <tbody>{filteredNetworks.map((n) => (
                 <tr key={n.id} className="border-b border-border/50 hover:bg-accent/50">
                   <td className="px-4 py-2.5 font-medium">{n.name}</td>
                   <td className="px-4 py-2.5"><span className="px-1.5 py-0.5 bg-secondary rounded text-xs">{n.driver}</span></td>

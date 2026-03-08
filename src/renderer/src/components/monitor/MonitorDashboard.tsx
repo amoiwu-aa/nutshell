@@ -73,8 +73,9 @@ export function MonitorDashboard({ sessionId, tabId, isActive }: MonitorDashboar
   const [selectedPids, setSelectedPids] = useState<Set<number>>(new Set())
   const [killSignal, setKillSignal] = useState<9 | 15>(15)
 
-  const { settings, setSettings } = useSettingsStore()
-  const mod = settings.monitorModules || defaultMonitorModules
+  const monitorModules = useSettingsStore((state) => state.settings.monitorModules)
+  const setSettings = useSettingsStore((state) => state.setSettings)
+  const mod = monitorModules || defaultMonitorModules
 
   const startMonitoring = useCallback(() => {
     setMonitorError(null)

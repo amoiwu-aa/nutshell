@@ -33,7 +33,12 @@ const tabTypeLabels: Record<string, string> = {
 }
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, removeTab, addTab, connections } = useConnectionStore()
+  const tabs = useConnectionStore((state) => state.tabs)
+  const activeTabId = useConnectionStore((state) => state.activeTabId)
+  const setActiveTab = useConnectionStore((state) => state.setActiveTab)
+  const removeTab = useConnectionStore((state) => state.removeTab)
+  const addTab = useConnectionStore((state) => state.addTab)
+  const connections = useConnectionStore((state) => state.connections)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number

@@ -17,8 +17,11 @@ const colorOptions = [
 ]
 
 export function ConnectionDialog() {
-  const { addConnection, updateConnection, connections } = useConnectionStore()
-  const { settings, setSettings } = useSettingsStore()
+  const addConnection = useConnectionStore((state) => state.addConnection)
+  const updateConnection = useConnectionStore((state) => state.updateConnection)
+  const connections = useConnectionStore((state) => state.connections)
+  const savedKeysFromSettings = useSettingsStore((state) => state.settings.savedKeys || [])
+  const setSettings = useSettingsStore((state) => state.setSettings)
   const [isOpen, setIsOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -26,11 +29,11 @@ export function ConnectionDialog() {
 
   const savedKeys = useMemo(() => {
     const keys = new Set([
-      ...(settings.savedKeys || []),
+      ...savedKeysFromSettings,
       ...connections.filter((c) => c.privateKeyPath).map((c) => c.privateKeyPath!)
     ])
     return Array.from(keys)
-  }, [settings.savedKeys, connections])
+  }, [savedKeysFromSettings, connections])
 
   const [customKeyPath, setCustomKeyPath] = useState(false)
 
@@ -129,7 +132,7 @@ export function ConnectionDialog() {
       const newPath = result.filePaths[0]
       setForm((prev) => ({ ...prev, privateKeyPath: newPath }))
 
-      const currentSavedKeys = settings.savedKeys || []
+      const currentSavedKeys = savedKeysFromSettings
       if (!currentSavedKeys.includes(newPath)) {
         setSettings({ savedKeys: [...currentSavedKeys, newPath] })
       }
@@ -304,7 +307,7 @@ export function ConnectionDialog() {
                         type="button"
                         onClick={(e) => {
                           e.preventDefault()
-                          setSettings({ savedKeys: (settings.savedKeys || []).filter(k => k !== form.privateKeyPath) })
+                          setSettings({ savedKeys: savedKeysFromSettings.filter(k => k !== form.privateKeyPath) })
                           // if it was the last one, custom path will take over
                         }}
                         className="text-[10px] text-destructive hover:underline"
