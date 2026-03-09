@@ -112,9 +112,22 @@ export function registerSFTPHandlers(): void {
   // Enhanced upload with transferId
   ipcMain.handle(
     'sftp:uploadWithId',
+    async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string, resumeOffset?: number) => {
+      try {
+        await sftpManager.upload(sessionId, localPath, remotePath, transferId, resumeOffset || 0)
+        return { success: true }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
+    }
+  )
+
+  // Upload entire directory recursively
+  ipcMain.handle(
+    'sftp:uploadDir',
     async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string) => {
       try {
-        await sftpManager.upload(sessionId, localPath, remotePath, transferId)
+        await sftpManager.uploadDir(sessionId, localPath, remotePath, transferId)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -198,6 +211,15 @@ export function registerSFTPHandlers(): void {
       return { success: true, files }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('sftp:statLocal', async (_event, localPath: string) => {
+    try {
+      const info = await sftpManager.statLocal(localPath)
+      return { success: true, ...info }
+    } catch (error: any) {
+      return { success: false, error: error.message, exists: false, isDirectory: false, size: 0 }
     }
   })
 

@@ -528,6 +528,8 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
 
     // External OS file drop (from Windows Explorer etc.)
     if (e.dataTransfer.files.length > 0) {
+      let queuedCount = 0
+      let skippedDirCount = 0
       for (let i = 0; i < e.dataTransfer.files.length; i++) {
         const file = e.dataTransfer.files[i]
         let filePath = ''
@@ -537,10 +539,68 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
           filePath = (file as any).path || ''
         }
         if (!filePath) continue
+
+        let localSize = file.size || 0
+        let isDirectory = false
+        let resolvedLocalMeta = false
+
+        try {
+          const statLocal = window.api.sftp.statLocal
+          if (typeof statLocal === 'function') {
+            const localStat = await statLocal(filePath)
+            if (localStat?.success && localStat.exists) {
+              localSize = localStat.size || localSize
+              isDirectory = !!localStat.isDirectory
+              resolvedLocalMeta = true
+            }
+          }
+
+          if (!resolvedLocalMeta) {
+            const parentPath = filePath.replace(/[\\/][^\\/]+$/, '')
+            const filename = filePath.split(/[/\\]/).pop()
+            if (parentPath && filename) {
+              const localList = await window.api.sftp.listLocal(parentPath)
+              if (localList?.success) {
+                const localEntry = localList.files?.find((entry: any) => entry.filename === filename)
+                if (localEntry) {
+                  localSize = localEntry.size || localSize
+                  isDirectory = !!localEntry.isDirectory
+                }
+              }
+            }
+          }
+        } catch {
+          // Fallback to browser-provided file metadata only
+        }
+
         const fileName = filePath.split(/[/\\]/).pop() || file.name
-        startTrackedTransfer('upload', filePath, `${remotePath}/${fileName}`, fileName, file.size || 0)
+
+        if (isDirectory) {
+          const transferId = crypto.randomUUID()
+          const item: TransferItem = {
+            id: transferId, sessionId, direction: 'upload',
+            localPath: filePath, remotePath: `${remotePath}/${fileName}`, filename: `📁 ${fileName}`,
+            totalSize: 0, transferredBytes: 0,
+            status: 'queued', speed: 0, eta: 0,
+            startedAt: Date.now(), resumable: false, resumeOffset: 0
+          }
+          useTransferStore.getState().enqueueTransfer(item, () => {
+            return window.api.sftp.uploadDir(sessionId, filePath, `${remotePath}/${fileName}`, transferId)
+          })
+          useConnectionStore.getState().setBottomPanelActiveTab('transfers')
+          useConnectionStore.getState().setBottomPanelVisible(true)
+        } else {
+          startTrackedTransfer('upload', filePath, `${remotePath}/${fileName}`, fileName, localSize)
+        }
+        queuedCount++
       }
-      setTimeout(() => loadRemoteFiles(remotePath), 1000)
+      if (queuedCount > 0) {
+        setTransferStatus(`已开始上传 ${queuedCount} 个文件/文件夹`)
+        setTimeout(() => {
+          setTransferStatus('')
+          loadRemoteFiles(remotePath)
+        }, 1000)
+      }
     }
   }, [sessionId, remotePath, loadRemoteFiles, startTrackedTransfer])
 

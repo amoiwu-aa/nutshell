@@ -103,6 +103,7 @@ const api = {
     chmod: (sessionId: string, remotePath: string, mode: string) =>
       ipcRenderer.invoke('sftp:chmod', sessionId, remotePath, mode),
     listLocal: (localPath: string) => ipcRenderer.invoke('sftp:listLocal', localPath),
+    statLocal: (localPath: string) => ipcRenderer.invoke('sftp:statLocal', localPath),
     getHomeDir: () => ipcRenderer.invoke('sftp:getHomeDir'),
     getRemoteHomeDir: (sessionId: string) =>
       ipcRenderer.invoke('sftp:getRemoteHomeDir', sessionId),
@@ -110,6 +111,8 @@ const api = {
       ipcRenderer.invoke('sftp:uploadWithId', sessionId, localPath, remotePath, transferId, resumeOffset),
     downloadWithId: (sessionId: string, remotePath: string, localPath: string, transferId: string, resumeOffset?: number) =>
       ipcRenderer.invoke('sftp:downloadWithId', sessionId, remotePath, localPath, transferId, resumeOffset),
+    uploadDir: (sessionId: string, localPath: string, remotePath: string, transferId: string) =>
+      ipcRenderer.invoke('sftp:uploadDir', sessionId, localPath, remotePath, transferId),
     downloadDir: (sessionId: string, remotePath: string, localPath: string, transferId: string) =>
       ipcRenderer.invoke('sftp:downloadDir', sessionId, remotePath, localPath, transferId),
     cancelTransfer: (transferId: string) =>
