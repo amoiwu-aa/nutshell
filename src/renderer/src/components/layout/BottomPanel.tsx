@@ -25,7 +25,7 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
 
   return (
     <div
-      className="flex flex-col bg-card border-t border-border shrink-0 overflow-hidden transition-[height] duration-150"
+      className="flex flex-col bg-card border-t border-border shrink-0 overflow-hidden"
       style={{ height: height > 0 ? height : 0, minHeight: height > 0 ? 80 : 0 }}
     >
       {/* Tab bar */}

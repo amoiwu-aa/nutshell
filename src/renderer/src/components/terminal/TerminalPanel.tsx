@@ -324,7 +324,7 @@ function TerminalInstance({
   )
 
   return (
-    <div className={cn('flex flex-col relative', className)} style={{
+    <div className={cn('flex flex-col relative min-h-0 overflow-hidden', className)} style={{
       backgroundColor: colorTheme === 'theme-glass'
         ? 'rgba(15, 25, 45, 0.35)'
         : (terminalThemes[selectedTerminalTheme] || terminalThemes.default).background
@@ -340,7 +340,7 @@ function TerminalInstance({
           <button onClick={() => setShowSearch(false)} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
         </div>
       )}
-      <div ref={containerRef} className="flex-1 xterm-container" onClick={() => setCtxMenu(null)} />
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden xterm-container" onClick={() => setCtxMenu(null)} />
 
       {/* Copy toast */}
       {
@@ -469,7 +469,7 @@ export function TerminalPanel({ sessionId, tabId, isActive }: TerminalPanelProps
   }, [sessionId])
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-full min-h-0 overflow-hidden">
       <div className="flex flex-col flex-1 overflow-hidden">
         <div className="flex items-center justify-end gap-1 px-2 py-1 bg-card border-b border-border shrink-0">
           <button onClick={() => handleSplit('vertical')} className={cn('p-1 rounded transition-colors', splitMode === 'vertical' ? 'bg-primary/20 text-primary' : 'hover:bg-accent text-muted-foreground')} title="垂直分屏">
