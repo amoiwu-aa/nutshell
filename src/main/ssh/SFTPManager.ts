@@ -167,14 +167,6 @@ class SFTPManager {
       let lastActivity = Date.now()
       let transferred = Math.max(0, Math.min(resumeOffset, totalSize))
 
-      const readStream = fs.createReadStream(localPath, {
-        start: transferred,
-        highWaterMark: 256 * 1024
-      })
-      const writeStream = sftp.createWriteStream(safePath, {
-        flags: transferred > 0 ? 'a' : 'w'
-      } as any)
-
       let inactivityCheck: NodeJS.Timeout | null = null
 
       const finish = (err?: Error) => {
@@ -191,63 +183,99 @@ class SFTPManager {
 
       this.activeTransfers.set(id, {
         abort: () => {
-          try { readStream.destroy() } catch { /* ignore */ }
-          try { writeStream.destroy() } catch { /* ignore */ }
           finish(new Error('Transfer cancelled'))
         }
       })
 
       inactivityCheck = setInterval(() => {
         if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
-          try { readStream.destroy() } catch { /* ignore */ }
-          try { writeStream.destroy() } catch { /* ignore */ }
           finish(new Error('Upload timed out (no data sent for 60s)'))
         }
       }, 10000)
 
-      this.notifyProgress(id, transferred, totalSize, path.basename(localPath))
+      if (transferred === 0) {
+        // Use fastPut for fast concurrent uploads if starting from beginning
+        sftp.fastPut(localPath, safePath, {
+          concurrency: 64,
+          chunkSize: 64 * 1024,
+          step: (transferredBytes: number, _chunk: number, total: number) => {
+            lastActivity = Date.now()
+            if (this.activeTransfers.has(id)) {
+              this.notifyProgress(id, transferredBytes, total, path.basename(localPath))
+            }
+          }
+        }, (err) => {
+          if (err) {
+            if (this.activeTransfers.has(id)) finish(err)
+          } else {
+            console.log(`[SFTP] Upload success: ${localPath} -> ${safePath} (${totalSize} bytes)`)
+            if (this.activeTransfers.has(id)) {
+              this.notifyProgress(id, totalSize, totalSize, path.basename(localPath))
+            }
+            finish()
+          }
+        })
+      } else {
+        // Fallback to sequential stream for resuming uploads
+        const readStream = fs.createReadStream(localPath, {
+          start: transferred,
+          highWaterMark: 256 * 1024
+        })
+        const writeStream = sftp.createWriteStream(safePath, {
+          flags: transferred > 0 ? 'a' : 'w'
+        } as any)
 
-      readStream.on('data', (chunk: string | Buffer) => {
-        lastActivity = Date.now()
-        const chunkLength = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)
-        transferred = Math.min(totalSize, transferred + chunkLength)
-        if (this.activeTransfers.has(id)) {
-          this.notifyProgress(id, transferred, totalSize, path.basename(localPath))
+        this.activeTransfers.set(id, {
+          ...this.activeTransfers.get(id)!,
+          abort: () => {
+            try { readStream.destroy() } catch { /* ignore */ }
+            try { writeStream.destroy() } catch { /* ignore */ }
+            finish(new Error('Transfer cancelled'))
+          }
+        })
+
+        readStream.on('data', (chunk: string | Buffer) => {
+          lastActivity = Date.now()
+          const chunkLength = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)
+          transferred = Math.min(totalSize, transferred + chunkLength)
+          if (this.activeTransfers.has(id)) {
+            this.notifyProgress(id, transferred, totalSize, path.basename(localPath))
+          }
+        })
+
+        readStream.on('error', (err: any) => {
+          try { writeStream.destroy() } catch { /* ignore */ }
+          finish(err instanceof Error ? err : new Error(err?.message || String(err)))
+        })
+
+        writeStream.on('error', (err: any) => {
+          try { readStream.destroy() } catch { /* ignore */ }
+          finish(err instanceof Error ? err : new Error(err?.message || String(err)))
+        })
+
+        writeStream.on('drain', () => {
+          lastActivity = Date.now()
+        })
+
+        const handleUploadDone = () => {
+          if (settled) return
+          console.log(`[SFTP] Resumed upload success: ${localPath} -> ${safePath} (${totalSize} bytes)`)
+          if (this.activeTransfers.has(id)) {
+            this.notifyProgress(id, totalSize, totalSize, path.basename(localPath))
+          }
+          finish()
         }
-      })
 
-      readStream.on('error', (err: any) => {
-        try { writeStream.destroy() } catch { /* ignore */ }
-        finish(err instanceof Error ? err : new Error(err?.message || String(err)))
-      })
+        writeStream.on('finish', handleUploadDone)
+        writeStream.on('close', handleUploadDone)
 
-      writeStream.on('error', (err: any) => {
-        try { readStream.destroy() } catch { /* ignore */ }
-        finish(err instanceof Error ? err : new Error(err?.message || String(err)))
-      })
-
-      writeStream.on('drain', () => {
-        lastActivity = Date.now()
-      })
-
-      const handleUploadDone = () => {
-        if (settled) return
-        console.log(`[SFTP] Upload success: ${localPath} -> ${safePath} (${totalSize} bytes)`)
-        if (this.activeTransfers.has(id)) {
-          this.notifyProgress(id, totalSize, totalSize, path.basename(localPath))
+        if (transferred >= totalSize) {
+          writeStream.end()
+          return
         }
-        finish()
+
+        readStream.pipe(writeStream)
       }
-
-      writeStream.on('finish', handleUploadDone)
-      writeStream.on('close', handleUploadDone)
-
-      if (transferred >= totalSize) {
-        writeStream.end()
-        return
-      }
-
-      readStream.pipe(writeStream)
     })
   }
 
