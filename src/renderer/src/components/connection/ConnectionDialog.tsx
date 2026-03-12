@@ -114,11 +114,26 @@ export function ConnectionDialog() {
   }
 
   const handleConnect = async () => {
-    await handleSave()
+    if (!form.name || !form.host || !form.username) return
 
-    // Trigger connection
-    const event = new CustomEvent('connection:open', { detail: form })
-    window.dispatchEvent(event)
+    const connection: ConnectionConfig = {
+      ...form,
+      authType: activeAuthTab === 'password' ? 'password' : form.passphrase ? 'keyWithPassphrase' : 'key'
+    }
+
+    // Save first
+    await window.api.config.saveConnection(connection)
+
+    if (isEditing) {
+      updateConnection(connection)
+    } else {
+      addConnection(connection)
+    }
+
+    // Dispatch connection event BEFORE closing dialog to avoid timing issues
+    window.dispatchEvent(new CustomEvent('connection:open', { detail: connection }))
+
+    setIsOpen(false)
   }
 
   const handleSelectKeyFile = async () => {
