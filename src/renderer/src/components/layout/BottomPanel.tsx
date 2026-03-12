@@ -33,10 +33,10 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
         <button
           onClick={() => setBottomPanelActiveTab('files')}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
+            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
             bottomPanelActiveTab === 'files'
-              ? 'text-primary border-primary tab-active-glow'
-              : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
+              ? 'text-primary tab-active-glow'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
         >
           <FolderOpen className="w-3.5 h-3.5" />
@@ -45,10 +45,10 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
         <button
           onClick={() => setBottomPanelActiveTab('commands')}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
+            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
             bottomPanelActiveTab === 'commands'
-              ? 'text-primary border-primary tab-active-glow'
-              : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
+              ? 'text-primary tab-active-glow'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
         >
           <Code2 className="w-3.5 h-3.5" />
@@ -57,10 +57,10 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
         <button
           onClick={() => setBottomPanelActiveTab('transfers')}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
+            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
             bottomPanelActiveTab === 'transfers'
-              ? 'text-primary border-primary tab-active-glow'
-              : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
+              ? 'text-primary tab-active-glow'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
         >
           <ArrowUpDown className="w-3.5 h-3.5" />
@@ -74,10 +74,10 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
         <button
           onClick={() => setBottomPanelActiveTab('ports')}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-b-2',
+            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
             bottomPanelActiveTab === 'ports'
-              ? 'text-primary border-primary tab-active-glow'
-              : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50'
+              ? 'text-primary tab-active-glow'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
           )}
         >
           <ArrowRightLeft className="w-3.5 h-3.5" />
