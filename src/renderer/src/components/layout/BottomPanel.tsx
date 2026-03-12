@@ -29,7 +29,7 @@ export function BottomPanel({ sessionId, height, onExecute, onOpenManager }: Bot
       style={{ height: height > 0 ? height : 0, minHeight: height > 0 ? 80 : 0 }}
     >
       {/* Tab bar */}
-      <div className="flex items-center shrink-0 relative" style={{ boxShadow: 'inset 0 -1px 0 hsl(var(--border) / 0.5)' }}>
+      <div className="flex items-center shrink-0">
         <button
           onClick={() => setBottomPanelActiveTab('files')}
           className={cn(
