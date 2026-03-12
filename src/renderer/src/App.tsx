@@ -336,17 +336,17 @@ function AppContent() {
           <div className="flex flex-col flex-1 overflow-hidden">
             <ContentArea />
             {activeTab && bottomPanelVisible && (
-              <>
-                <ResizableDivider direction="horizontal" onResize={handleBottomPanelResize} />
-                <Suspense fallback={null}>
-                  <BottomPanel
-                    sessionId={activeTab.sessionId}
-                    height={bottomPanelHeight}
-                    onExecute={handleCommandExecute}
-                    onOpenManager={() => setShowSnippets(true)}
-                  />
-                </Suspense>
-              </>
+              <ResizableDivider direction="horizontal" onResize={handleBottomPanelResize} />
+            )}
+            {activeTab && (
+              <Suspense fallback={null}>
+                <BottomPanel
+                  sessionId={activeTab.sessionId}
+                  height={bottomPanelVisible ? bottomPanelHeight : 0}
+                  onExecute={handleCommandExecute}
+                  onOpenManager={() => setShowSnippets(true)}
+                />
+              </Suspense>
             )}
           </div>
         </div>
