@@ -196,7 +196,7 @@ class SFTPManager {
       if (transferred === 0) {
         // Use fastPut for fast concurrent uploads if starting from beginning
         sftp.fastPut(localPath, safePath, {
-          concurrency: 64,
+          concurrency: 32,
           chunkSize: 64 * 1024,
           step: (transferredBytes: number, _chunk: number, total: number) => {
             lastActivity = Date.now()
@@ -318,7 +318,7 @@ class SFTPManager {
       })
 
       sftp.fastGet(safePath, localPath, {
-        concurrency: 64, // 64 concurrent reads
+        concurrency: 32,
         chunkSize: 64 * 1024,
         step: (transferred: number, chunk: number, total: number) => {
           lastActivity = Date.now()
