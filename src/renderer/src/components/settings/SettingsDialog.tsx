@@ -301,6 +301,10 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between py-2 border-b border-border">
+                    <span className="text-muted-foreground">作者</span>
+                    <span className="font-medium">吴翔</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-border">
                     <span className="text-muted-foreground">框架</span>
                     <span>Electron + React + TypeScript</span>
                   </div>
@@ -323,7 +327,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                 </div>
 
                 <p className="text-xs text-center text-muted-foreground mt-6">
-                  Made with care. Better than FinalShell.
+                  Copyright © {new Date().getFullYear()} 吴翔. All Rights Reserved.
                 </p>
               </div>
             )}
