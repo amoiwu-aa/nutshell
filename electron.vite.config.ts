@@ -25,6 +25,7 @@ export default defineConfig({
       postcss: resolve(__dirname, 'postcss.config.js')
     },
     build: {
+      minify: false,
       rollupOptions: {
         output: {
           manualChunks: {

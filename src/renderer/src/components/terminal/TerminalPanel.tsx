@@ -355,7 +355,7 @@ function TerminalInstance({
       {
         ctxMenu && (
           <>
-            <div className="fixed inset-0 z-[90]" onClick={() => setCtxMenu(null)} />
+            <div className="fixed inset-0 z-[90]" onClick={() => { setCtxMenu(null); terminalRef.current?.focus() }} />
             <div
               className="context-menu fixed z-[100] bg-popover text-popover-foreground border border-border rounded-lg shadow-xl py-1 min-w-[140px] select-none"
               style={{ left: ctxMenu.x, top: ctxMenu.y }}
@@ -370,6 +370,7 @@ function TerminalInstance({
                     showCopyToast()
                   }
                   setCtxMenu(null)
+                  terminalRef.current?.focus()
                 }}
               >
                 <Copy className="w-3.5 h-3.5 shrink-0" /> 复制
@@ -379,6 +380,7 @@ function TerminalInstance({
                 onClick={() => {
                   navigator.clipboard.readText().then((text) => {
                     if (text) window.api.ssh.write(sessionId, text)
+                    terminalRef.current?.focus()
                   })
                   setCtxMenu(null)
                 }}
@@ -390,6 +392,7 @@ function TerminalInstance({
                 onClick={() => {
                   terminalRef.current?.selectAll()
                   setCtxMenu(null)
+                  terminalRef.current?.focus()
                 }}
               >
                 <TextSelect className="w-3.5 h-3.5 shrink-0" /> 全选
@@ -400,6 +403,7 @@ function TerminalInstance({
                 onClick={() => {
                   terminalRef.current?.clear()
                   setCtxMenu(null)
+                  terminalRef.current?.focus()
                 }}
               >
                 <Eraser className="w-3.5 h-3.5 shrink-0" /> 清屏

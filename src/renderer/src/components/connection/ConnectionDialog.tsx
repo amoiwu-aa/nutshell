@@ -15,12 +15,14 @@ const colorOptions = [
   '#06b6d4',
   '#f97316'
 ]
+const EMPTY_KEYS: string[] = []
 
 export function ConnectionDialog() {
   const addConnection = useConnectionStore((state) => state.addConnection)
   const updateConnection = useConnectionStore((state) => state.updateConnection)
   const connections = useConnectionStore((state) => state.connections)
-  const savedKeysFromSettings = useSettingsStore((state) => state.settings.savedKeys || [])
+  const savedKeysRaw = useSettingsStore((state) => state.settings.savedKeys)
+  const savedKeysFromSettings = savedKeysRaw ?? EMPTY_KEYS
   const setSettings = useSettingsStore((state) => state.setSettings)
   const [isOpen, setIsOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
