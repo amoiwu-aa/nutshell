@@ -32,6 +32,7 @@ function AppContent() {
   const loadSettings = useSettingsStore((state) => state.loadSettings)
   const setSettings = useSettingsStore((state) => state.setSettings)
   const setSettingsMemOnly = useSettingsStore((state) => state.setSettingsMemOnly)
+  const aiCompatibilityMode = useSettingsStore((state) => state.settings.aiCompatibilityMode)
   const { toast } = useToast()
   const [showSnippets, setShowSnippets] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
@@ -146,7 +147,7 @@ function AppContent() {
 
       setConnecting(true)
       try {
-        const result = await window.api.ssh.connect(config)
+        const result = await window.api.ssh.connect({ ...config, aiCompatibilityMode })
         if (result.success) {
           const terminalTab: Tab = {
             id: tabId,
@@ -280,7 +281,7 @@ function AppContent() {
       window.removeEventListener('app:toggleMonitorPanel', handleToggleMonitorPanel)
       window.removeEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as unknown as EventListener)
     }
-  }, [addTab, toast])
+  }, [addTab, aiCompatibilityMode, toast])
 
   const handleSnippetExecute = useCallback(
     (command: string) => {
@@ -362,7 +363,7 @@ function AppContent() {
           />
         )}
         {showSettings && (
-          <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
+          <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} sessionId={activeTab?.sessionId} />
         )}
         {showScriptWorkshop && (
           <ScriptWorkshop isOpen={showScriptWorkshop} onClose={() => setShowScriptWorkshop(false)} sessionId={activeTab?.sessionId} />

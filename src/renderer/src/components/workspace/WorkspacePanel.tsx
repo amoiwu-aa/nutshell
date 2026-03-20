@@ -13,12 +13,25 @@ import { ProblemsPanel, type Diagnostic } from './ProblemsPanel'
 import { WorkspaceAI } from './WorkspaceAI'
 import { Terminal as XTerminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import {
   registerLspProviders, disposeAllProviders,
   notifyFileOpen, notifyFileChange, notifyFileClose, notifyFileSave
 } from '../../lib/LspProviderBridge'
 import type * as monacoType from 'monaco-editor'
+import { useSettingsStore } from '../../stores/settingsStore'
+import {
+  attachPreferredRenderer,
+  TERMINAL_UNICODE_VERSION
+} from '../../lib/terminalRendering'
+import {
+  detectHeavyCliCommand,
+  getTerminalInteractionProfileConfig,
+  resolveRendererModeForProfile,
+  type TerminalInteractionProfile
+} from '../../lib/terminalProfiles'
+import { registerOsc52ClipboardHandler } from '../../lib/terminalClipboard'
 
 // ===== Cursor/VSCode Color Tokens =====
 const C = {
@@ -431,10 +444,30 @@ function GitChangesPanel({ sessionId, rootPath, gitChanges, onOpenFile, onOpenDi
 function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: string; rootPath: string; isActive: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerminal | null>(null)
+  const fitAddonRef = useRef<FitAddon | null>(null)
+  const rendererDisposeRef = useRef<(() => void) | null>(null)
+  const osc52DisposeRef = useRef<(() => void) | null>(null)
   const cdSentRef = useRef(false)
   const isActiveRef = useRef(isActive)
   const pendingOutputRef = useRef('')
   const outputRafRef = useRef<number | null>(null)
+  const backpressureNotifiedRef = useRef(false)
+  const interactionProfileRef = useRef<TerminalInteractionProfile>('default')
+  const frozenThemeRef = useRef(false)
+  const fontSize = useSettingsStore((state) => state.settings.fontSize)
+  const fontFamily = useSettingsStore((state) => state.settings.fontFamily)
+  const aiCompatibilityMode = useSettingsStore((state) => state.settings.aiCompatibilityMode)
+  const terminalRenderer = useSettingsStore((state) => state.settings.terminalRenderer)
+  const allowRemoteClipboardWrite = useSettingsStore((state) => state.settings.allowRemoteClipboardWrite)
+  const currentProfile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+
+  const pasteToTerminal = useCallback((text: string) => {
+    const term = termRef.current
+    if (!term || !text) return
+    term.clearSelection()
+    term.focus()
+    window.api.ssh.write(sessionId, text)
+  }, [sessionId])
 
   useEffect(() => {
     isActiveRef.current = isActive
@@ -459,6 +492,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
     if (!containerRef.current || termRef.current) return
     const currentContainer = containerRef.current
     const term = new XTerminal({
+      allowProposedApi: true,
       theme: {
         background: '#1e1e1e', foreground: '#cccccc', cursor: '#aeafad',
         selectionBackground: '#264f78', selectionForeground: '#ffffff',
@@ -468,44 +502,125 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
         brightYellow: '#f5f543', brightBlue: '#3b8eea', brightMagenta: '#d670d6',
         brightCyan: '#29b8db', brightWhite: '#e5e5e5',
       },
-      fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace",
-      cursorBlink: true, scrollback: 10000, convertEol: true, rightClickSelectsWord: true,
-      lineHeight: 1.2,
+      fontSize,
+      fontFamily,
+      cursorBlink: true,
+      scrollback: currentProfile.scrollback,
+      convertEol: !aiCompatibilityMode,
+      rightClickSelectsWord: false,
+      lineHeight: 1.15,
+      letterSpacing: 0,
+      customGlyphs: true,
+      rescaleOverlappingGlyphs: true,
+      minimumContrastRatio: 1,
     })
     const fit = new FitAddon()
+    const unicode11Addon = new Unicode11Addon()
     term.loadAddon(fit)
+    term.loadAddon(unicode11Addon)
+    term.unicode.activeVersion = TERMINAL_UNICODE_VERSION
     term.open(containerRef.current)
     fit.fit()
     termRef.current = term
+    fitAddonRef.current = fit
+
+    osc52DisposeRef.current = registerOsc52ClipboardHandler(term, {
+      enabled: allowRemoteClipboardWrite
+    })
+
+    const pasteFromClipboard = () => {
+      pasteToTerminal(window.api.clipboard.readText())
+    }
+
+    const switchInteractionProfile = (profile: TerminalInteractionProfile) => {
+      if (interactionProfileRef.current === profile) return
+      interactionProfileRef.current = profile
+      backpressureNotifiedRef.current = false
+      if (profile === 'heavy-cli') {
+        frozenThemeRef.current = true
+      }
+
+      const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
+      term.options.scrollback = nextProfile.scrollback
+      fitAddonRef.current?.fit()
+
+      if (rendererDisposeRef.current) {
+        rendererDisposeRef.current()
+        rendererDisposeRef.current = attachPreferredRenderer(
+          term,
+          resolveRendererModeForProfile(terminalRenderer, profile),
+          undefined
+        ).dispose
+      }
+    }
+
+    const copyText = (text: string) => {
+      window.api.clipboard.writeText(text)
+    }
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'C') { const s = term.getSelection(); if (s) navigator.clipboard.writeText(s); return false }
-      if (e.ctrlKey && e.shiftKey && e.key === 'V') { navigator.clipboard.readText().then((text) => { if (text) window.api.ssh.write(sessionId, text) }); return false }
+      if (e.ctrlKey && e.shiftKey && e.key === 'C') { const s = term.getSelection(); if (s) copyText(s); return false }
+      if (e.ctrlKey && e.shiftKey && e.key === 'V') { pasteFromClipboard(); return false }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v') { pasteFromClipboard(); return false }
+      if (e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c') { const s = term.getSelection(); if (s) { copyText(s); return false } }
+      if (e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'v') { pasteFromClipboard(); return false }
+      if (e.shiftKey && e.key === 'Insert') { pasteFromClipboard(); return false }
       return true
     })
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault()
-      const s = term.getSelection()
-      if (s) { navigator.clipboard.writeText(s); term.clearSelection() }
-      else { navigator.clipboard.readText().then((text) => { if (text) window.api.ssh.write(sessionId, text) }) }
+      e.stopPropagation()
     }
-    currentContainer.addEventListener('contextmenu', handleContextMenu)
+    currentContainer.addEventListener('contextmenu', handleContextMenu, true)
+
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text/plain')
+      if (!text) return
+      e.preventDefault()
+      e.stopPropagation()
+      pasteToTerminal(text)
+    }
+    currentContainer.addEventListener('paste', handlePasteEvent, true)
 
     const flushOutput = () => {
       outputRafRef.current = null
       if (!pendingOutputRef.current || !isActiveRef.current) return
-      term.write(pendingOutputRef.current)
-      pendingOutputRef.current = ''
+
+      const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+      const chunk = pendingOutputRef.current.slice(0, profile.chunkSize)
+      pendingOutputRef.current = pendingOutputRef.current.slice(chunk.length)
+      term.write(chunk)
+
+      if (pendingOutputRef.current) {
+        outputRafRef.current = requestAnimationFrame(flushOutput)
+      } else {
+        backpressureNotifiedRef.current = false
+      }
     }
     const queueOutput = (data: string) => {
       pendingOutputRef.current += data
+
+      const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+      const maxPending = isActiveRef.current ? profile.maxPendingBytes : profile.maxPendingWhenHidden
+      if (pendingOutputRef.current.length > maxPending) {
+        pendingOutputRef.current = pendingOutputRef.current.slice(-maxPending)
+        if (!backpressureNotifiedRef.current) {
+          backpressureNotifiedRef.current = true
+          pendingOutputRef.current = `\r\n\x1b[33m[终端输出过快，已裁剪旧输出以保持工作区终端稳定]\x1b[0m\r\n` + pendingOutputRef.current
+        }
+      }
+
       if (isActiveRef.current && outputRafRef.current === null) {
         outputRafRef.current = requestAnimationFrame(flushOutput)
       }
     }
 
-    term.onData((data) => window.api.ssh.write(sessionId, data))
+    term.onData((data) => {
+      if (detectHeavyCliCommand(data)) {
+        switchInteractionProfile('heavy-cli')
+      }
+      window.api.ssh.write(sessionId, data)
+    })
     const removeData = window.api.ssh.onData((sid: string, data: string) => { if (sid === sessionId) queueOutput(data) })
 
     if (!cdSentRef.current) {
@@ -520,17 +635,51 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       debounceTimer = setTimeout(() => { try { if (containerRef.current && containerRef.current.offsetWidth > 0) fit.fit() } catch {} }, 100)
     })
     ro.observe(containerRef.current)
+
+    setTimeout(() => {
+      if (!termRef.current) return
+      rendererDisposeRef.current = attachPreferredRenderer(
+        term,
+        resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current),
+        undefined
+      ).dispose
+      try { fit.fit() } catch { }
+    }, 100)
+
     return () => {
       removeData()
       ro.disconnect()
       clearTimeout(debounceTimer)
       if (outputRafRef.current !== null) cancelAnimationFrame(outputRafRef.current)
       pendingOutputRef.current = ''
-      currentContainer.removeEventListener('contextmenu', handleContextMenu)
+      rendererDisposeRef.current?.()
+      rendererDisposeRef.current = null
+      osc52DisposeRef.current?.()
+      osc52DisposeRef.current = null
+      fitAddonRef.current = null
+      currentContainer.removeEventListener('paste', handlePasteEvent, true)
+      currentContainer.removeEventListener('contextmenu', handleContextMenu, true)
       term.dispose()
       termRef.current = null
     }
-  }, [sessionId, rootPath])
+  }, [sessionId, rootPath, fontSize, fontFamily, aiCompatibilityMode, terminalRenderer, pasteToTerminal, allowRemoteClipboardWrite])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    try {
+      term.options.fontSize = fontSize
+      term.options.fontFamily = fontFamily
+      term.options.scrollback = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).scrollback
+      term.options.convertEol = !aiCompatibilityMode
+      term.options.customGlyphs = true
+      term.options.rescaleOverlappingGlyphs = true
+      term.options.minimumContrastRatio = 1
+      term.options.lineHeight = 1.15
+      term.options.letterSpacing = 0
+      fitAddonRef.current?.fit()
+    } catch { }
+  }, [fontSize, fontFamily, aiCompatibilityMode])
 
   useEffect(() => {
     if (!isActive) return

@@ -2,10 +2,30 @@ import { useState } from 'react'
 import { X, Sun, Moon, Monitor, Type, Palette, Sparkles, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { TerminalDiagnostics } from './TerminalDiagnostics'
+
+const terminalRendererModes = [
+  {
+    id: 'auto',
+    name: 'Auto',
+    description: '优先使用 WebGL，失败时自动回退到 Canvas 或 DOM'
+  },
+  {
+    id: 'webgl',
+    name: 'WebGL',
+    description: '性能最好，但个别显卡驱动下可能出现花屏或发虚'
+  },
+  {
+    id: 'canvas',
+    name: 'Canvas',
+    description: '兼容性更稳，适合遇到渲染异常时手动避坑'
+  }
+] as const
 
 interface SettingsDialogProps {
   isOpen: boolean
   onClose: () => void
+  sessionId?: string
 }
 
 const terminalThemes = [
@@ -36,7 +56,7 @@ const fontFamilies = [
   "'Source Code Pro', monospace"
 ]
 
-export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogProps) {
   const settings = useSettingsStore((state) => state.settings)
   const setSettings = useSettingsStore((state) => state.setSettings)
   const setSettingsMemOnly = useSettingsStore((state) => state.setSettingsMemOnly)
@@ -282,6 +302,119 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     ))}
                   </div>
                 </div>
+
+                <div>
+                  <h3 className="text-sm font-medium mb-3">终端渲染器</h3>
+                  <div className="space-y-2">
+                    {terminalRendererModes.map((mode) => (
+                      <button
+                        key={mode.id}
+                        onClick={() => setSettings({ terminalRenderer: mode.id })}
+                        className={cn(
+                          'block w-full rounded-xl border p-3 text-left transition-colors',
+                          settings.terminalRenderer === mode.id
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:border-primary/50'
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium">{mode.name}</div>
+                            <div className="mt-1 text-xs leading-5 text-muted-foreground">{mode.description}</div>
+                          </div>
+                          <div
+                            className={cn(
+                              'h-2.5 w-2.5 shrink-0 rounded-full',
+                              settings.terminalRenderer === mode.id ? 'bg-primary shadow-[0_0_10px_currentColor]' : 'bg-muted-foreground/30'
+                            )}
+                          />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium mb-3">兼容模式</h3>
+                  <button
+                    onClick={() => setSettings({ aiCompatibilityMode: !settings.aiCompatibilityMode })}
+                    className={cn(
+                      'w-full rounded-xl border p-4 text-left transition-colors',
+                      settings.aiCompatibilityMode
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">AI/TUI 终端兼容模式</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          优化 `claude code`、`codex`、`opencode`、`vim`、`htop` 这类重交互终端工具的显示和输入行为。
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          会为新建 SSH 会话启用更兼容的 PTY 和终端设置；已打开的会话重连后生效。
+                        </p>
+                      </div>
+                      <div
+                        className={cn(
+                          'mt-0.5 inline-flex h-6 w-11 shrink-0 rounded-full border transition-colors',
+                          settings.aiCompatibilityMode
+                            ? 'border-primary bg-primary'
+                            : 'border-border bg-muted'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'm-[2px] h-5 w-5 rounded-full bg-white transition-transform',
+                            settings.aiCompatibilityMode ? 'translate-x-5' : 'translate-x-0'
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium mb-3">远程剪贴板</h3>
+                  <button
+                    onClick={() => setSettings({ allowRemoteClipboardWrite: !settings.allowRemoteClipboardWrite })}
+                    className={cn(
+                      'w-full rounded-xl border p-4 text-left transition-colors',
+                      settings.allowRemoteClipboardWrite
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">允许远程程序写入本地剪贴板</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          支持 `opencode`、`claude`、`codex` 等终端工具通过 OSC 52 真正复制内容到本机剪贴板。
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          关闭后，远程程序仍可能提示复制成功，但不会真正写入本地系统剪贴板。
+                        </p>
+                      </div>
+                      <div
+                        className={cn(
+                          'mt-0.5 inline-flex h-6 w-11 shrink-0 rounded-full border transition-colors',
+                          settings.allowRemoteClipboardWrite
+                            ? 'border-primary bg-primary'
+                            : 'border-border bg-muted'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'm-[2px] h-5 w-5 rounded-full bg-white transition-transform',
+                            settings.allowRemoteClipboardWrite ? 'translate-x-5' : 'translate-x-0'
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <TerminalDiagnostics sessionId={sessionId} />
               </div>
             )}
 

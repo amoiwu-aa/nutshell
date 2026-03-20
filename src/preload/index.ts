@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // Types for the API
 export interface SSHConnectionConfig {
@@ -14,6 +14,7 @@ export interface SSHConnectionConfig {
   group?: string
   jumpHost?: string
   color?: string
+  aiCompatibilityMode?: boolean
 }
 
 export interface PortForwardRule {
@@ -41,6 +42,7 @@ const api = {
   ssh: {
     connect: (config: SSHConnectionConfig) => ipcRenderer.invoke('ssh:connect', config),
     disconnect: (sessionId: string) => ipcRenderer.invoke('ssh:disconnect', sessionId),
+    runDiagnostics: (sessionId: string) => ipcRenderer.invoke('ssh:runDiagnostics', sessionId),
     write: (sessionId: string, data: string) => ipcRenderer.send('ssh:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) =>
       ipcRenderer.send('ssh:resize', sessionId, cols, rows),
@@ -383,6 +385,11 @@ const api = {
   // File utilities (Electron 32+ requires webUtils for drag-drop file paths)
   file: {
     getPathForFile: (file: File): string => webUtils.getPathForFile(file)
+  },
+
+  clipboard: {
+    readText: () => clipboard.readText(),
+    writeText: (text: string) => clipboard.writeText(text)
   },
 
   // Config store

@@ -840,6 +840,8 @@ button {
 
 .xterm-container .xterm {
   padding: 12px;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0, 'calt' 0, 'clig' 0;
 }
 
 .xterm-viewport::-webkit-scrollbar {

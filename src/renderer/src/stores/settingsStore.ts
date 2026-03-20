@@ -25,6 +25,9 @@ export interface AppSettings {
   fontSize: number
   fontFamily: string
   terminalTheme: string
+  terminalRenderer: 'auto' | 'webgl' | 'canvas'
+  aiCompatibilityMode: boolean
+  allowRemoteClipboardWrite: boolean
   language: string
   sidebarWidth: number
   monitorModules: MonitorModules
@@ -44,6 +47,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     fontSize: 14,
     fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace",
     terminalTheme: 'default',
+    terminalRenderer: 'auto',
+    aiCompatibilityMode: false,
+    allowRemoteClipboardWrite: true,
     language: 'zh-CN',
     sidebarWidth: 260,
     monitorModules: defaultMonitorModules,

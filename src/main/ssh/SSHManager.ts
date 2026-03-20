@@ -1,9 +1,42 @@
 import { Client, ClientChannel } from 'ssh2'
+import type { ExecOptions } from 'ssh2'
 import { BrowserWindow } from 'electron'
 import { v4 as uuidv4 } from 'uuid'
 import { sftpManager } from './SFTPManager'
 import { portForwardManager } from './PortForward'
 import { serverMonitor } from '../monitor/ServerMonitor'
+
+const DEFAULT_SSH_TERM = 'xterm-256color'
+
+interface TerminalDiagnosticsResult {
+  term: string
+  locale: string[]
+  widthSample: string
+  boxSample: string[]
+  emojiSample: string
+  rawOutput: string
+  checks: {
+    termMatches: boolean
+    localeUtf8: boolean
+    widthMatches: boolean
+    boxMatches: boolean
+    emojiMatches: boolean
+  }
+}
+
+interface SessionConnectConfig {
+  host: string
+  port: number
+  username: string
+  authType: 'password' | 'key' | 'keyWithPassphrase'
+  password?: string
+  privateKeyPath?: string
+  passphrase?: string
+  jumpHost?: string
+  autoReconnect?: boolean
+  maxReconnectAttempts?: number
+  aiCompatibilityMode?: boolean
+}
 
 export interface SSHSession {
   id: string
@@ -17,6 +50,7 @@ export interface SSHSession {
     password?: string
     privateKeyPath?: string
     passphrase?: string
+    aiCompatibilityMode?: boolean
   }
   connected: boolean
   reconnectAttempts: number
@@ -31,19 +65,22 @@ class SSHManager {
   private sessions: Map<string, SSHSession> = new Map()
   private connectingLocks: Map<string, Promise<string>> = new Map()
 
-  async connect(config: {
-    id?: string
-    host: string
-    port: number
-    username: string
-    authType: 'password' | 'key' | 'keyWithPassphrase'
-    password?: string
-    privateKeyPath?: string
-    passphrase?: string
-    jumpHost?: string
-    autoReconnect?: boolean
-    maxReconnectAttempts?: number
-  }): Promise<string> {
+  private getTerminalEnvironment(aiCompatibilityMode: boolean): NodeJS.ProcessEnv | undefined {
+    if (!aiCompatibilityMode) {
+      return undefined
+    }
+
+    return {
+      TERM: DEFAULT_SSH_TERM,
+      COLORTERM: 'truecolor',
+      TERM_PROGRAM: 'Nutshell',
+      TERM_PROGRAM_VERSION: '1.0.1',
+      INSIDE_NUTSHELL: '1',
+      FORCE_COLOR: '1'
+    }
+  }
+
+  async connect(config: SessionConnectConfig & { id?: string }): Promise<string> {
     const sessionId = config.id || uuidv4()
 
     // Prevent duplicate concurrent connections for same session
@@ -65,17 +102,7 @@ class SSHManager {
 
   private async _doConnect(
     sessionId: string,
-    config: {
-      host: string
-      port: number
-      username: string
-      authType: 'password' | 'key' | 'keyWithPassphrase'
-      password?: string
-      privateKeyPath?: string
-      passphrase?: string
-      autoReconnect?: boolean
-      maxReconnectAttempts?: number
-    }
+    config: SessionConnectConfig
   ): Promise<string> {
     // Clean up existing session if any
     if (this.sessions.has(sessionId)) {
@@ -123,7 +150,8 @@ class SSHManager {
             authType: config.authType,
             password: config.password,
             privateKeyPath: config.privateKeyPath,
-            passphrase: config.passphrase
+            passphrase: config.passphrase,
+            aiCompatibilityMode: config.aiCompatibilityMode
           },
           connected: true,
           reconnectAttempts: 0,
@@ -281,31 +309,48 @@ class SSHManager {
     if (!session) throw new Error('Session not found')
     if (!session.connected) throw new Error('Session not connected')
 
+    const aiCompatibilityMode = session.config.aiCompatibilityMode === true
+    const windowOptions: {
+      term: string
+      cols: number
+      rows: number
+      modes?: {
+        [key: string]: number
+      }
+    } = {
+      term: 'xterm-256color',
+      cols,
+      rows
+    }
+
+    if (!aiCompatibilityMode) {
+      windowOptions.modes = {
+        ICRNL: 1,
+        IXON: 1,
+        IXANY: 1,
+        IMAXBEL: 1,
+        OPOST: 1,
+        ONLCR: 1,
+        ISIG: 1,
+        ICANON: 1,
+        ECHO: 1,
+        ECHOE: 1,
+        ECHOK: 1,
+        ECHONL: 0,
+        IEXTEN: 1
+      }
+    }
+
+    const shellOptions = aiCompatibilityMode
+      ? {
+          env: this.getTerminalEnvironment(true)
+        }
+      : {}
+
     return new Promise((resolve, reject) => {
       session.client.shell(
-        {
-          term: 'xterm-256color',
-          cols,
-          rows,
-          modes: {
-            // Input modes
-            ICRNL: 1,    // Translate CR to NL on input (fixes double-enter bug)
-            IXON: 1,     // Enable XON/XOFF flow control
-            IXANY: 1,    // Any char restarts output after XOFF
-            IMAXBEL: 1,  // Ring bell on input queue full
-            // Output modes  
-            OPOST: 1,    // Enable output processing
-            ONLCR: 1,    // Translate NL to CR-NL on output
-            // Local modes
-            ISIG: 1,     // Enable signals (INTR, QUIT, SUSP)
-            ICANON: 1,   // Canonical input (line editing)
-            ECHO: 1,     // Echo input characters
-            ECHOE: 1,    // Echo erase as BS-SP-BS
-            ECHOK: 1,    // Echo NL after kill
-            ECHONL: 0,   // Don't echo NL when ECHO is off  
-            IEXTEN: 1,   // Enable extensions
-          }
-        },
+        windowOptions,
+        shellOptions,
         (err, stream) => {
           if (err) {
             reject(err)
@@ -414,6 +459,95 @@ class SSHManager {
   }
 
   async exec(sessionId: string, command: string, timeoutMs: number = EXEC_TIMEOUT_MS): Promise<string> {
+    return this.execWithOptions(sessionId, command, timeoutMs)
+  }
+
+  async runTerminalDiagnostics(sessionId: string): Promise<TerminalDiagnosticsResult> {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('Session not found')
+
+    const output = await this.execWithOptions(
+      sessionId,
+      [
+        "cat <<'NUTSHELL_DIAG' | sh",
+        "printf '__NUTSHELL_TERM__\\n'",
+        "printf '%s\\n' \"$TERM\"",
+        "printf '__NUTSHELL_LOCALE__\\n'",
+        "(locale 2>/dev/null || env | grep -E '^(LANG|LC_)=' 2>/dev/null || true)",
+        "printf '__NUTSHELL_WIDTH__\\n'",
+        "printf '%s\\n' '| hello | 中文宽度 | ⅠⅡⅢ | 🙂🚀 |'",
+        "printf '__NUTSHELL_BOX__\\n'",
+        "printf '%s\\n' '┌──────────┬────┐'",
+        "printf '%s\\n' '│ 中文 🙂  │ OK │'",
+        "printf '%s\\n' '└──────────┴────┘'",
+        "printf '__NUTSHELL_EMOJI__\\n'",
+        "printf '%s\\n' '🙂 🚀 🧠 ✅ 🔥'",
+        "printf '__NUTSHELL_DONE__\\n'",
+        'NUTSHELL_DIAG'
+      ].join('\n'),
+      15000,
+      {
+        pty: {
+          term: DEFAULT_SSH_TERM,
+          cols: 80,
+          rows: 24
+        },
+        env: {
+          TERM: DEFAULT_SSH_TERM,
+          ...this.getTerminalEnvironment(session.config.aiCompatibilityMode === true)
+        }
+      }
+    )
+
+    const readSection = (name: string, nextName: string): string[] => {
+      const startMarker = `__NUTSHELL_${name}__`
+      const endMarker = `__NUTSHELL_${nextName}__`
+      const start = output.indexOf(startMarker)
+      const end = output.indexOf(endMarker)
+      if (start === -1 || end === -1 || end <= start) {
+        return []
+      }
+
+      return output
+        .slice(start + startMarker.length, end)
+        .replace(/^\r?\n/, '')
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)
+    }
+
+    const term = readSection('TERM', 'LOCALE')[0] || ''
+    const locale = readSection('LOCALE', 'WIDTH')
+    const widthSample = readSection('WIDTH', 'BOX')[0] || ''
+    const boxSample = readSection('BOX', 'EMOJI')
+    const emojiSample = readSection('EMOJI', 'DONE')[0] || ''
+    const expectedWidthSample = '| hello | 中文宽度 | ⅠⅡⅢ | 🙂🚀 |'
+    const expectedBoxSample = ['┌──────────┬────┐', '│ 中文 🙂  │ OK │', '└──────────┴────┘']
+    const expectedEmojiSample = '🙂 🚀 🧠 ✅ 🔥'
+
+    return {
+      term,
+      locale,
+      widthSample,
+      boxSample,
+      emojiSample,
+      rawOutput: output,
+      checks: {
+        termMatches: term === DEFAULT_SSH_TERM,
+        localeUtf8: locale.some((line) => /utf-?8|c\.utf-?8/i.test(line)),
+        widthMatches: widthSample === expectedWidthSample,
+        boxMatches: JSON.stringify(boxSample) === JSON.stringify(expectedBoxSample),
+        emojiMatches: emojiSample === expectedEmojiSample
+      }
+    }
+  }
+
+  async execWithOptions(
+    sessionId: string,
+    command: string,
+    timeoutMs: number = EXEC_TIMEOUT_MS,
+    execOptions?: ExecOptions
+  ): Promise<string> {
     const session = this.sessions.get(sessionId)
     if (!session) throw new Error('Session not found')
     if (!session.connected) throw new Error('Session not connected')
@@ -423,7 +557,7 @@ class SSHManager {
         reject(new Error(`Command timed out after ${timeoutMs}ms`))
       }, timeoutMs)
 
-      session.client.exec(command, (err, stream) => {
+      const callback = (err: Error | undefined, stream: ClientChannel) => {
         if (err) {
           clearTimeout(timer)
           reject(err)
@@ -452,7 +586,13 @@ class SSHManager {
           stream.removeAllListeners()
           reject(streamErr)
         })
-      })
+      }
+
+      if (execOptions) {
+        session.client.exec(command, execOptions, callback)
+      } else {
+        session.client.exec(command, callback)
+      }
     })
   }
 

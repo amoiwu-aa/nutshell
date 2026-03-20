@@ -28,4 +28,13 @@ export function registerSSHHandlers(): void {
   ipcMain.on('ssh:resize', (_event, sessionId: string, cols: number, rows: number) => {
     sshManager.resize(sessionId, cols, rows)
   })
+
+  ipcMain.handle('ssh:runDiagnostics', async (_event, sessionId: string) => {
+    try {
+      const result = await sshManager.runTerminalDiagnostics(sessionId)
+      return { success: true, result }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
 }

@@ -3,12 +3,24 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
-import { WebglAddon } from '@xterm/addon-webgl'
-import { CanvasAddon } from '@xterm/addon-canvas'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { Search, X, ChevronUp, ChevronDown, SplitSquareHorizontal, Columns, Sparkles, Copy, ClipboardPaste, TextSelect, Eraser } from 'lucide-react'
 import { AIAssistant } from './AIAssistant'
 import { cn } from '../../lib/utils'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useToast } from '../ui/Toast'
+import {
+  attachPreferredRenderer,
+  formatRendererModeLabel,
+  TERMINAL_UNICODE_VERSION
+} from '../../lib/terminalRendering'
+import {
+  detectHeavyCliCommand,
+  getTerminalInteractionProfileConfig,
+  resolveRendererModeForProfile,
+  type TerminalInteractionProfile
+} from '../../lib/terminalProfiles'
+import { registerOsc52ClipboardHandler } from '../../lib/terminalClipboard'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -87,21 +99,35 @@ function TerminalInstance({
   const [showSearch, setShowSearch] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
-  const [copyToast, setCopyToast] = useState(false)
-  const copyToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingOutputRef = useRef('')
   const outputRafRef = useRef<number | null>(null)
   const isActiveRef = useRef(isActive)
+  const rendererDisposeRef = useRef<(() => void) | null>(null)
+  const osc52DisposeRef = useRef<(() => void) | null>(null)
+  const [effectiveRenderer, setEffectiveRenderer] = useState<'dom' | 'webgl' | 'canvas'>('dom')
+  const backpressureNotifiedRef = useRef(false)
+  const interactionProfileRef = useRef<TerminalInteractionProfile>('default')
+  const frozenThemeRef = useRef<{ terminalThemeId: string; useGlass: boolean } | null>(null)
   const selectedTerminalTheme = useSettingsStore((state) => state.settings.terminalTheme)
   const fontSize = useSettingsStore((state) => state.settings.fontSize)
   const fontFamily = useSettingsStore((state) => state.settings.fontFamily)
   const colorTheme = useSettingsStore((state) => (state.settings as any).colorTheme as string | undefined)
+  const aiCompatibilityMode = useSettingsStore((state) => state.settings.aiCompatibilityMode)
+  const terminalRenderer = useSettingsStore((state) => state.settings.terminalRenderer)
+  const allowRemoteClipboardWrite = useSettingsStore((state) => state.settings.allowRemoteClipboardWrite)
+  const currentProfile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
 
-  const showCopyToast = useCallback(() => {
-    setCopyToast(true)
-    if (copyToastTimerRef.current) clearTimeout(copyToastTimerRef.current)
-    copyToastTimerRef.current = setTimeout(() => setCopyToast(false), 1200)
+  const writeClipboardText = useCallback((text: string) => {
+    window.api.clipboard.writeText(text)
   }, [])
+
+  const pasteToTerminal = useCallback((text: string) => {
+    const terminal = terminalRef.current
+    if (!terminal || !text) return
+    terminal.clearSelection()
+    terminal.focus()
+    window.api.ssh.write(sessionId, text)
+  }, [sessionId])
 
   useEffect(() => {
     isActiveRef.current = isActive
@@ -116,35 +142,52 @@ function TerminalInstance({
       outputRafRef.current = requestAnimationFrame(() => {
         outputRafRef.current = null
         if (!terminalRef.current || !pendingOutputRef.current || !isActiveRef.current) return
-        terminalRef.current.write(pendingOutputRef.current)
-        pendingOutputRef.current = ''
+        const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+        const chunk = pendingOutputRef.current.slice(0, profile.chunkSize)
+        pendingOutputRef.current = pendingOutputRef.current.slice(chunk.length)
+        terminalRef.current.write(chunk)
+        if (pendingOutputRef.current) {
+          outputRafRef.current = requestAnimationFrame(() => {
+            outputRafRef.current = null
+            if (!terminalRef.current || !pendingOutputRef.current || !isActiveRef.current) return
+            terminalRef.current.write(pendingOutputRef.current)
+            pendingOutputRef.current = ''
+          })
+        }
       })
     }
-  }, [isActive])
+  }, [isActive, aiCompatibilityMode])
 
   useEffect(() => {
     if (!containerRef.current) return
 
-    const theme = terminalThemes[selectedTerminalTheme] || terminalThemes.default
     const isGlass = document.documentElement.classList.contains('theme-glass')
-    const termTheme = isGlass
-      ? { ...theme, background: 'transparent' }
-      : theme
+    const activeThemeId = frozenThemeRef.current?.terminalThemeId ?? selectedTerminalTheme
+    const useGlass = frozenThemeRef.current ? frozenThemeRef.current.useGlass : isGlass
+    const theme = terminalThemes[activeThemeId] || terminalThemes.default
+    const termTheme = useGlass ? { ...theme, background: 'transparent' } : theme
 
     const terminal = new Terminal({
+      allowProposedApi: true,
       theme: termTheme,
       fontSize,
       fontFamily,
       cursorBlink: true,
       cursorStyle: 'bar',
-      scrollback: 10000,
-      convertEol: true,
+      scrollback: currentProfile.scrollback,
+      convertEol: !aiCompatibilityMode,
+      customGlyphs: true,
+      rescaleOverlappingGlyphs: true,
+      minimumContrastRatio: 1,
+      lineHeight: 1.15,
+      letterSpacing: 0,
       macOptionIsMeta: true,
-      rightClickSelectsWord: true,
+      rightClickSelectsWord: false,
       allowTransparency: true
     })
 
     const fitAddon = new FitAddon()
+    const unicode11Addon = new Unicode11Addon()
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
       // Prevent opening link when user is just selecting text to copy
       if (terminal.hasSelection()) return
@@ -157,8 +200,17 @@ function TerminalInstance({
     const searchAddon = new SearchAddon()
 
     terminal.loadAddon(fitAddon)
+    terminal.loadAddon(unicode11Addon)
     terminal.loadAddon(webLinksAddon)
     terminal.loadAddon(searchAddon)
+    terminal.unicode.activeVersion = TERMINAL_UNICODE_VERSION
+
+    osc52DisposeRef.current = registerOsc52ClipboardHandler(terminal, {
+      enabled: allowRemoteClipboardWrite,
+      onCopy: () => {
+        setCtxMenu(null)
+      }
+    })
 
     terminal.open(containerRef.current)
 
@@ -171,26 +223,71 @@ function TerminalInstance({
     // Expose terminal ref to parent
     onTerminalRef?.(terminal)
 
+    const pasteFromClipboard = () => {
+      pasteToTerminal(window.api.clipboard.readText())
+    }
+
+    const switchInteractionProfile = (profile: TerminalInteractionProfile) => {
+      if (interactionProfileRef.current === profile) return
+      interactionProfileRef.current = profile
+      backpressureNotifiedRef.current = false
+
+      if (profile === 'heavy-cli' && !frozenThemeRef.current) {
+        frozenThemeRef.current = {
+          terminalThemeId: selectedTerminalTheme,
+          useGlass: false
+        }
+      }
+
+      const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
+      terminal.options.scrollback = nextProfile.scrollback
+      fitAddonRef.current?.fit()
+
+      if (rendererDisposeRef.current) {
+        rendererDisposeRef.current()
+        rendererDisposeRef.current = attachPreferredRenderer(
+          terminal,
+          resolveRendererModeForProfile(terminalRenderer, profile),
+          setEffectiveRenderer
+        ).dispose
+      }
+    }
+
     // Copy/paste support
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === 'C') {
         const selection = terminal.getSelection()
-        if (selection) navigator.clipboard.writeText(selection)
+        if (selection) writeClipboardText(selection)
         return false
       }
       if (e.ctrlKey && e.shiftKey && e.key === 'V') {
-        navigator.clipboard.readText().then((text) => {
-          if (text) window.api.ssh.write(sessionId, text)
-        })
+        pasteFromClipboard()
+        return false
+      }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v') {
+        pasteFromClipboard()
+        return false
+      }
+      if (e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'c') {
+        const selection = terminal.getSelection()
+        if (selection) {
+          writeClipboardText(selection)
+          return false
+        }
+      }
+      if (e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'v') {
+        pasteFromClipboard()
+        return false
+      }
+      if (e.shiftKey && e.key === 'Insert') {
+        pasteFromClipboard()
         return false
       }
       // Ctrl+C with selection = copy (not SIGINT)
       if (e.ctrlKey && !e.shiftKey && e.key === 'c' && e.type === 'keydown') {
         const selection = terminal.getSelection()
         if (selection) {
-          navigator.clipboard.writeText(selection)
-          terminal.clearSelection()
-          showCopyToast()
+          writeClipboardText(selection)
           return false
         }
       }
@@ -200,34 +297,60 @@ function TerminalInstance({
     // Right-click opens context menu
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault()
+      e.stopPropagation()
       setCtxMenu({ x: e.clientX, y: e.clientY })
     }
-    containerRef.current.addEventListener('contextmenu', handleContextMenu)
+    containerRef.current.addEventListener('contextmenu', handleContextMenu, true)
+
+    const handlePasteEvent = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text/plain')
+      if (!text) return
+      e.preventDefault()
+      e.stopPropagation()
+      pasteToTerminal(text)
+    }
+    containerRef.current.addEventListener('paste', handlePasteEvent, true)
 
     const flushBufferedOutput = () => {
       outputRafRef.current = null
       if (!pendingOutputRef.current || !isActiveRef.current) return
-      terminal.write(pendingOutputRef.current)
-      pendingOutputRef.current = ''
+
+      const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+      const chunk = pendingOutputRef.current.slice(0, profile.chunkSize)
+      pendingOutputRef.current = pendingOutputRef.current.slice(chunk.length)
+      terminal.write(chunk)
+
+      if (pendingOutputRef.current) {
+        outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
+      } else {
+        backpressureNotifiedRef.current = false
+      }
     }
 
     const queueOutput = (data: string) => {
       pendingOutputRef.current += data
+
+      const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+      const maxPending = isActiveRef.current ? profile.maxPendingBytes : profile.maxPendingWhenHidden
+      if (pendingOutputRef.current.length > maxPending) {
+        pendingOutputRef.current = pendingOutputRef.current.slice(-maxPending)
+        if (!backpressureNotifiedRef.current) {
+          backpressureNotifiedRef.current = true
+          pendingOutputRef.current = `\r\n\x1b[33m[终端输出过快，已保留最近 ${Math.round(maxPending / 1024)}KB 数据以保持界面稳定]\x1b[0m\r\n` + pendingOutputRef.current
+        }
+      }
+
       if (isActiveRef.current && outputRafRef.current === null) {
         outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
       }
     }
 
-    // Copy on select (auto-copy when text is selected)
-    terminal.onSelectionChange(() => {
-      const selection = terminal.getSelection()
-      if (selection) {
-        navigator.clipboard.writeText(selection)
-        showCopyToast()
+    terminal.onData((data) => {
+      if (detectHeavyCliCommand(data)) {
+        switchInteractionProfile('heavy-cli')
       }
+      window.api.ssh.write(sessionId, data)
     })
-
-    terminal.onData((data) => { window.api.ssh.write(sessionId, data) })
 
     let lastCols = 0, lastRows = 0
     terminal.onResize(({ cols, rows }) => {
@@ -265,13 +388,11 @@ function TerminalInstance({
         try { fitAddon.fit() } catch { }
 
         // Safely enable Hardware Acceleration ONLY after terminal is fitted into DOM
-        try {
-          const webglAddon = new WebglAddon()
-          webglAddon.onContextLoss(() => webglAddon.dispose())
-          terminal.loadAddon(webglAddon)
-        } catch {
-          try { terminal.loadAddon(new CanvasAddon()) } catch { }
-        }
+        rendererDisposeRef.current = attachPreferredRenderer(
+          terminal,
+          resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current),
+          setEffectiveRenderer
+        ).dispose
 
         if (isDisposed) return
         const { cols, rows } = terminal; lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows)
@@ -281,38 +402,49 @@ function TerminalInstance({
     return () => {
       isDisposed = true
       if (resizeTimer) clearTimeout(resizeTimer)
-      if (copyToastTimerRef.current) clearTimeout(copyToastTimerRef.current)
       if (outputRafRef.current !== null) {
         cancelAnimationFrame(outputRafRef.current)
         outputRafRef.current = null
       }
+      rendererDisposeRef.current?.()
+      rendererDisposeRef.current = null
+      osc52DisposeRef.current?.()
+      osc52DisposeRef.current = null
       pendingOutputRef.current = ''
       onTerminalRef?.(null)
       removeDataListener(); removeCloseListener(); removeErrorListener()
       removeReconnectingListener?.(); removeReconnectedListener?.()
-      resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown); currentContainer.removeEventListener('contextmenu', handleContextMenu)
+      resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown); currentContainer.removeEventListener('contextmenu', handleContextMenu, true); currentContainer.removeEventListener('paste', handlePasteEvent, true)
       try { terminal.dispose() } catch { }
       terminalRef.current = null
     }
-  }, [sessionId])
+  }, [sessionId, aiCompatibilityMode, terminalRenderer, pasteToTerminal, writeClipboardText, onTerminalRef, allowRemoteClipboardWrite])
 
   useEffect(() => {
     const terminal = terminalRef.current
     // @ts-ignore
     if (!terminal || terminal._core?._isDisposed || (terminal as any)._isDisposed) return
     try {
-      const theme = terminalThemes[selectedTerminalTheme] || terminalThemes.default
-      const isGlass = document.documentElement.classList.contains('theme-glass')
-      const termTheme = isGlass
+      const activeThemeId = frozenThemeRef.current?.terminalThemeId ?? selectedTerminalTheme
+      const useGlass = frozenThemeRef.current ? frozenThemeRef.current.useGlass : document.documentElement.classList.contains('theme-glass')
+      const theme = terminalThemes[activeThemeId] || terminalThemes.default
+      const termTheme = useGlass
         ? { ...theme, background: 'transparent' }
         : theme
 
       terminal.options.theme = termTheme
       terminal.options.fontSize = fontSize
       terminal.options.fontFamily = fontFamily
+      terminal.options.scrollback = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).scrollback
+      terminal.options.convertEol = !aiCompatibilityMode
+      terminal.options.customGlyphs = true
+      terminal.options.rescaleOverlappingGlyphs = true
+      terminal.options.minimumContrastRatio = 1
+      terminal.options.lineHeight = 1.15
+      terminal.options.letterSpacing = 0
       fitAddonRef.current?.fit()
     } catch { }
-  }, [selectedTerminalTheme, fontSize, fontFamily, colorTheme])
+  }, [selectedTerminalTheme, fontSize, fontFamily, colorTheme, aiCompatibilityMode])
 
   const handleSearch = useCallback(
     (direction: 'next' | 'prev') => {
@@ -329,6 +461,14 @@ function TerminalInstance({
         ? 'rgba(15, 25, 45, 0.35)'
         : (terminalThemes[selectedTerminalTheme] || terminalThemes.default).background
     }}>
+      <div className="flex items-center justify-between gap-2 px-3 py-1 border-b border-border/60 bg-card/70 text-[11px] text-muted-foreground shrink-0">
+        <span>渲染器: {formatRendererModeLabel(effectiveRenderer)}</span>
+        <span>
+          {getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).label}
+          {interactionProfileRef.current === 'heavy-cli' ? ' · 主题已锁定' : ''}
+          {' · '}Unicode {TERMINAL_UNICODE_VERSION}
+        </span>
+      </div>
       {showSearch && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-card border-b border-border shrink-0">
           <Search className="w-4 h-4 text-muted-foreground" />
@@ -341,15 +481,6 @@ function TerminalInstance({
         </div>
       )}
       <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden xterm-container" onClick={() => setCtxMenu(null)} />
-
-      {/* Copy toast */}
-      {
-        copyToast && (
-          <div className="absolute top-2 right-2 px-2.5 py-1 bg-green-600 text-white text-xs rounded shadow-lg animate-in fade-in zoom-in duration-200 pointer-events-none">
-            已复制
-          </div>
-        )
-      }
 
       {/* Right-click context menu */}
       {
@@ -365,23 +496,18 @@ function TerminalInstance({
                 onClick={() => {
                   const sel = terminalRef.current?.getSelection()
                   if (sel) {
-                    navigator.clipboard.writeText(sel)
-                    terminalRef.current?.clearSelection()
-                    showCopyToast()
+                    writeClipboardText(sel)
                   }
                   setCtxMenu(null)
                   terminalRef.current?.focus()
-                }}
-              >
+                 }}
+               >
                 <Copy className="w-3.5 h-3.5 shrink-0" /> 复制
               </button>
               <button
                 className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left text-popover-foreground hover:bg-accent hover:text-accent-foreground rounded transition-colors"
                 onClick={() => {
-                  navigator.clipboard.readText().then((text) => {
-                    if (text) window.api.ssh.write(sessionId, text)
-                    terminalRef.current?.focus()
-                  })
+                  pasteToTerminal(window.api.clipboard.readText())
                   setCtxMenu(null)
                 }}
               >
@@ -421,10 +547,23 @@ export function TerminalPanel({ sessionId, tabId, isActive }: TerminalPanelProps
   const [splitMode, setSplitMode] = useState<'none' | 'horizontal' | 'vertical'>('none')
   const [showAI, setShowAI] = useState(false)
   const terminalInstanceRef = useRef<Terminal | null>(null)
+  const { toast } = useToast()
 
   const handleSplit = (mode: 'horizontal' | 'vertical') => {
+    toast('warning', '分屏共享同一终端会话', '像 opencode 这类重交互 CLI 在分屏下更容易卡顿；建议单窗口使用。', 5000)
     setSplitMode((prev) => (prev === mode ? 'none' : mode))
   }
+
+  useEffect(() => {
+    const handleFocus = (e: Event) => {
+      const customEvent = e as CustomEvent
+      if (customEvent.detail?.tabId === tabId && terminalInstanceRef.current) {
+        terminalInstanceRef.current.focus()
+      }
+    }
+    window.addEventListener('terminal:focus', handleFocus)
+    return () => window.removeEventListener('terminal:focus', handleFocus)
+  }, [tabId])
 
   // Get terminal screen content for AI context
   const getTerminalContent = useCallback((): string => {
