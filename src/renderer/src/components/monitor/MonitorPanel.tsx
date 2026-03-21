@@ -45,6 +45,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [selectedInterface, setSelectedInterface] = useState<string>('all')
   const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Buffer to batch monitor updates per animation frame
   const pendingDataRef = useRef<MonitorData | null>(null)
@@ -53,7 +54,12 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
   useEffect(() => {
     window.api.monitor.start(sessionId, 3000, PANEL_MODULES)
     window.api.monitor.getSystemInfo(sessionId).then((r: any) => {
-      if (r.success) setSysInfo(r.info)
+      if (r.success) {
+        setSysInfo(r.info)
+        setError(null)
+      } else {
+        setError(r.error || '无法获取系统信息')
+      }
     })
 
     const removeListener = window.api.monitor.onData((sid: string, data: any) => {
@@ -68,6 +74,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
           if (!p) return
           pendingDataRef.current = null
           setCurrentData(p)
+          setError(null)
           setHistory((prev) => {
             const next = prev.length >= MAX_DATA_POINTS ? prev.slice(1) : [...prev]
             next.push(p)
@@ -77,8 +84,14 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
       }
     })
 
+    const removeError = window.api.monitor.onError?.((sid: string, message: string) => {
+      if (sid !== sessionId) return
+      setError(message || '监控采集失败')
+    })
+
     return () => {
       removeListener()
+      removeError?.()
       window.api.monitor.stop(sessionId)
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     }
@@ -179,10 +192,17 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps) {
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5">
         {/* Loading state */}
-        {!currentData && (
+        {!currentData && !error && (
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-2 welcome-logo"><Activity className="w-5 h-5 text-primary" /></div>
             <p className="text-xs">正在收集数据...</p>
+          </div>
+        )}
+
+        {!currentData && error && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-3 text-xs text-destructive">
+            <p className="font-medium mb-1">监控数据暂时不可用</p>
+            <p className="leading-5">{error}</p>
           </div>
         )}
 

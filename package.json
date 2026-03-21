@@ -1,12 +1,15 @@
 {
   "name": "nutshell",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Nutshell - Advanced SSH Remote Management Tool",
   "main": "./out/main/index.js",
   "author": "吴翔",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
+    "rust:build": "cargo build --manifest-path native/nutshell-core/Cargo.toml",
+    "rust:build:release": "cargo build --release --manifest-path native/nutshell-core/Cargo.toml",
+    "rust:run": "cargo run --manifest-path native/nutshell-core/Cargo.toml",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
@@ -71,6 +74,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "native/nutshell-core/target/release/nutshell-core.exe",
+        "to": "native/nutshell-core/nutshell-core.exe"
       }
     ],
     "win": {

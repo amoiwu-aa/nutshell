@@ -22,6 +22,7 @@ export interface Tab {
   sessionId: string
   name: string
   type: 'terminal' | 'sftp' | 'monitor' | 'docker' | 'workspace' | 'editor'
+  engine?: 'node' | 'rust'
   workspacePath?: string
   filePath?: string
   fileName?: string

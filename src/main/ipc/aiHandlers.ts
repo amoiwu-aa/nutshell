@@ -1,6 +1,17 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { aiService } from '../ai/AIService'
 import { workspaceService } from '../workspace/WorkspaceService'
+import { rustCoreService } from '../rust/RustCoreService'
+
+function formatRustToolResult(result: any): string {
+  if (typeof result === 'string') return result
+  if (result == null) return '空结果'
+  try {
+    return JSON.stringify(result, null, 2)
+  } catch {
+    return String(result)
+  }
+}
 
 export function registerAIHandlers(): void {
   ipcMain.handle('ai:chat', async (_event, messages: Array<{ role: string; content: string }>) => {
@@ -67,18 +78,22 @@ export function registerAIHandlers(): void {
       const executeTool = async (name: string, args: any): Promise<string> => {
         switch (name) {
           case 'read_file':
-            return await workspaceService.readFile(sessionId, args.path)
+            return formatRustToolResult(await rustCoreService.readFile({ sessionId, path: args.path, maxBytes: 128 * 1024 }))
           case 'write_file':
-            await workspaceService.writeFile(sessionId, args.path, args.content)
+            await rustCoreService.writeFile({ sessionId, path: args.path, content: args.content, createDirs: true })
             return `文件已写入: ${args.path}`
           case 'list_directory':
-            const entries = await workspaceService.listDirectory(sessionId, args.path)
-            return entries.map((e) => `${e.isDirectory ? '[DIR]' : '[FILE]'} ${e.name}`).join('\n')
+            return formatRustToolResult(await rustCoreService.listDir({ sessionId, path: args.path }))
           case 'search_code':
-            const results = await workspaceService.searchFiles(sessionId, rootPath, args.query)
-            return results.map((r) => `${r.file}:${r.line}: ${r.content}`).join('\n') || '无匹配结果'
+            return formatRustToolResult(await rustCoreService.search({ sessionId, rootPath, pattern: args.query, limit: 100 }))
           case 'run_command':
-            return await workspaceService.runCommand(sessionId, rootPath, args.cmd)
+            return formatRustToolResult(await rustCoreService.runCommand({ sessionId, command: args.cmd, cwd: rootPath, timeoutMs: 30000, requireConfirmation: false }))
+          case 'read_multiple_files':
+            return formatRustToolResult(await rustCoreService.readMultipleFiles({ sessionId, paths: Array.isArray(args.paths) ? args.paths : String(args.paths || '').split(',').map((s) => s.trim()).filter(Boolean) }))
+          case 'scan_project':
+            return formatRustToolResult(await rustCoreService.scanProject({ sessionId, rootPath }))
+          case 'project_summary':
+            return formatRustToolResult(await rustCoreService.projectSummary({ sessionId, rootPath }))
           default:
             return `未知工具: ${name}`
         }

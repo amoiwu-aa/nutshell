@@ -74,7 +74,7 @@ export function registerConfigHandlers(): void {
   ipcMain.handle('config:selectFile', async (_event, options) => {
     try {
       const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
+        properties: options?.properties || ['openFile'],
         filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
       })
       return { success: true, filePaths: result.filePaths, canceled: result.canceled }

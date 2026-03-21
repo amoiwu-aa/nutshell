@@ -27,6 +27,7 @@ interface TerminalPanelProps {
   sessionId: string
   tabId: string
   isActive: boolean
+  engine?: 'node' | 'rust'
 }
 
 const terminalThemes: Record<string, any> = {
@@ -80,28 +81,89 @@ function getTerminalBufferContent(terminal: Terminal, lines: number = 50): strin
   return result.join('\n')
 }
 
+function resolveTerminalVisualState(
+  selectedTerminalTheme: string,
+  colorTheme: string | undefined,
+  frozenTheme: { terminalThemeId: string; useGlass: boolean } | null
+) {
+  const activeThemeId = frozenTheme?.terminalThemeId ?? selectedTerminalTheme
+  const useGlass = frozenTheme ? frozenTheme.useGlass : colorTheme === 'theme-glass'
+  const theme = terminalThemes[activeThemeId] || terminalThemes.default
+
+  return {
+    activeThemeId,
+    useGlass,
+    theme,
+    termTheme: useGlass ? { ...theme, background: 'transparent' } : theme,
+    containerBackground: useGlass ? 'rgba(15, 25, 45, 0.35)' : theme.background
+  }
+}
+
+function dequeueOutputChunk(queue: string[], totalRef: { current: number }, maxBytes: number): string {
+  if (queue.length === 0) return ''
+  let remaining = maxBytes
+  let output = ''
+
+  while (queue.length > 0 && remaining > 0) {
+    const head = queue[0]
+    if (head.length <= remaining) {
+      output += head
+      remaining -= head.length
+      totalRef.current -= head.length
+      queue.shift()
+    } else {
+      output += head.slice(0, remaining)
+      queue[0] = head.slice(remaining)
+      totalRef.current -= remaining
+      remaining = 0
+    }
+  }
+
+  return output
+}
+
+function trimOutputQueue(queue: string[], totalRef: { current: number }, maxBytes: number): void {
+  while (totalRef.current > maxBytes && queue.length > 0) {
+    const head = queue[0]
+    const overflow = totalRef.current - maxBytes
+    if (head.length <= overflow) {
+      totalRef.current -= head.length
+      queue.shift()
+    } else {
+      queue[0] = head.slice(overflow)
+      totalRef.current -= overflow
+      break
+    }
+  }
+}
+
 // Single terminal instance component
 function TerminalInstance({
   sessionId,
   isActive,
+  engine,
   className,
   onTerminalRef
 }: {
   sessionId: string
   isActive: boolean
+  engine: 'node' | 'rust'
   className?: string
   onTerminalRef?: (ref: Terminal | null) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const onTerminalRefRef = useRef(onTerminalRef)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const [showSearch, setShowSearch] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
-  const pendingOutputRef = useRef('')
+  const pendingOutputChunksRef = useRef<string[]>([])
+  const pendingOutputBytesRef = useRef(0)
   const outputRafRef = useRef<number | null>(null)
   const isActiveRef = useRef(isActive)
+  const isComposingRef = useRef(false)
   const rendererDisposeRef = useRef<(() => void) | null>(null)
   const osc52DisposeRef = useRef<(() => void) | null>(null)
   const [effectiveRenderer, setEffectiveRenderer] = useState<'dom' | 'webgl' | 'canvas'>('dom')
@@ -116,6 +178,10 @@ function TerminalInstance({
   const terminalRenderer = useSettingsStore((state) => state.settings.terminalRenderer)
   const allowRemoteClipboardWrite = useSettingsStore((state) => state.settings.allowRemoteClipboardWrite)
   const currentProfile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+
+  useEffect(() => {
+    onTerminalRefRef.current = onTerminalRef
+  }, [onTerminalRef])
 
   const writeClipboardText = useCallback((text: string) => {
     window.api.clipboard.writeText(text)
@@ -138,20 +204,20 @@ function TerminalInstance({
       }
       return
     }
-    if (terminalRef.current && pendingOutputRef.current && outputRafRef.current === null) {
+    if (terminalRef.current && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
       outputRafRef.current = requestAnimationFrame(() => {
         outputRafRef.current = null
-        if (!terminalRef.current || !pendingOutputRef.current || !isActiveRef.current) return
+        if (!terminalRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
         const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-        const chunk = pendingOutputRef.current.slice(0, profile.chunkSize)
-        pendingOutputRef.current = pendingOutputRef.current.slice(chunk.length)
+        const chunk = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, profile.chunkSize)
+        if (!chunk) return
         terminalRef.current.write(chunk)
-        if (pendingOutputRef.current) {
+        if (pendingOutputChunksRef.current.length > 0) {
           outputRafRef.current = requestAnimationFrame(() => {
             outputRafRef.current = null
-            if (!terminalRef.current || !pendingOutputRef.current || !isActiveRef.current) return
-            terminalRef.current.write(pendingOutputRef.current)
-            pendingOutputRef.current = ''
+            if (!terminalRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
+            const rest = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, Number.MAX_SAFE_INTEGER)
+            if (rest) terminalRef.current.write(rest)
           })
         }
       })
@@ -161,11 +227,7 @@ function TerminalInstance({
   useEffect(() => {
     if (!containerRef.current) return
 
-    const isGlass = document.documentElement.classList.contains('theme-glass')
-    const activeThemeId = frozenThemeRef.current?.terminalThemeId ?? selectedTerminalTheme
-    const useGlass = frozenThemeRef.current ? frozenThemeRef.current.useGlass : isGlass
-    const theme = terminalThemes[activeThemeId] || terminalThemes.default
-    const termTheme = useGlass ? { ...theme, background: 'transparent' } : theme
+    const { termTheme } = resolveTerminalVisualState(selectedTerminalTheme, colorTheme, frozenThemeRef.current)
 
     const terminal = new Terminal({
       allowProposedApi: true,
@@ -183,6 +245,7 @@ function TerminalInstance({
       letterSpacing: 0,
       macOptionIsMeta: true,
       rightClickSelectsWord: false,
+      smoothScrollDuration: 0,
       allowTransparency: true
     })
 
@@ -213,6 +276,28 @@ function TerminalInstance({
     })
 
     terminal.open(containerRef.current)
+    terminal.options.overviewRulerWidth = 0
+
+    const textarea = terminal.textarea
+    if (textarea) {
+      textarea.style.zIndex = '1'
+      textarea.setAttribute('lang', 'zh-CN')
+      textarea.setAttribute('autocomplete', 'off')
+      textarea.setAttribute('autocorrect', 'off')
+      textarea.setAttribute('autocapitalize', 'off')
+      textarea.setAttribute('spellcheck', 'false')
+      const handleCompositionStart = () => { isComposingRef.current = true }
+      const handleCompositionEnd = () => {
+        isComposingRef.current = false
+        requestAnimationFrame(() => terminal.focus())
+      }
+      textarea.addEventListener('compositionstart', handleCompositionStart)
+      textarea.addEventListener('compositionend', handleCompositionEnd)
+      ;(textarea as any).__nutshellCompositionCleanup = () => {
+        textarea.removeEventListener('compositionstart', handleCompositionStart)
+        textarea.removeEventListener('compositionend', handleCompositionEnd)
+      }
+    }
 
     fitAddon.fit()
 
@@ -221,11 +306,16 @@ function TerminalInstance({
     searchAddonRef.current = searchAddon
 
     // Expose terminal ref to parent
-    onTerminalRef?.(terminal)
+    onTerminalRefRef.current?.(terminal)
+    terminal.focus()
 
     const pasteFromClipboard = () => {
       pasteToTerminal(window.api.clipboard.readText())
     }
+
+    const preferredRenderer = colorTheme === 'theme-glass'
+      ? 'canvas'
+      : resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current)
 
     const switchInteractionProfile = (profile: TerminalInteractionProfile) => {
       if (interactionProfileRef.current === profile) return
@@ -247,7 +337,7 @@ function TerminalInstance({
         rendererDisposeRef.current()
         rendererDisposeRef.current = attachPreferredRenderer(
           terminal,
-          resolveRendererModeForProfile(terminalRenderer, profile),
+          colorTheme === 'theme-glass' ? 'canvas' : resolveRendererModeForProfile(terminalRenderer, profile),
           setEffectiveRenderer
         ).dispose
       }
@@ -255,6 +345,7 @@ function TerminalInstance({
 
     // Copy/paste support
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (isComposingRef.current || e.isComposing) return true
       if (e.ctrlKey && e.shiftKey && e.key === 'C') {
         const selection = terminal.getSelection()
         if (selection) writeClipboardText(selection)
@@ -293,7 +384,6 @@ function TerminalInstance({
       }
       return true
     })
-
     // Right-click opens context menu
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault()
@@ -313,14 +403,14 @@ function TerminalInstance({
 
     const flushBufferedOutput = () => {
       outputRafRef.current = null
-      if (!pendingOutputRef.current || !isActiveRef.current) return
+      if (pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-      const chunk = pendingOutputRef.current.slice(0, profile.chunkSize)
-      pendingOutputRef.current = pendingOutputRef.current.slice(chunk.length)
+      const chunk = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, profile.chunkSize)
+      if (!chunk) return
       terminal.write(chunk)
 
-      if (pendingOutputRef.current) {
+      if (pendingOutputChunksRef.current.length > 0) {
         outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
       } else {
         backpressureNotifiedRef.current = false
@@ -328,22 +418,34 @@ function TerminalInstance({
     }
 
     const queueOutput = (data: string) => {
-      pendingOutputRef.current += data
+      pendingOutputChunksRef.current.push(data)
+      pendingOutputBytesRef.current += data.length
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
       const maxPending = isActiveRef.current ? profile.maxPendingBytes : profile.maxPendingWhenHidden
-      if (pendingOutputRef.current.length > maxPending) {
-        pendingOutputRef.current = pendingOutputRef.current.slice(-maxPending)
+      if (pendingOutputBytesRef.current > maxPending) {
+        trimOutputQueue(pendingOutputChunksRef.current, pendingOutputBytesRef, maxPending)
         if (!backpressureNotifiedRef.current) {
           backpressureNotifiedRef.current = true
-          pendingOutputRef.current = `\r\n\x1b[33m[终端输出过快，已保留最近 ${Math.round(maxPending / 1024)}KB 数据以保持界面稳定]\x1b[0m\r\n` + pendingOutputRef.current
+          const message = `\r\n\x1b[33m[终端输出过快，已保留最近 ${Math.round(maxPending / 1024)}KB 数据以保持界面稳定]\x1b[0m\r\n`
+          pendingOutputChunksRef.current.unshift(message)
+          pendingOutputBytesRef.current += message.length
         }
       }
 
+      if (terminal.buffer.active.viewportY !== terminal.buffer.active.baseY) {
+        return
+      }
       if (isActiveRef.current && outputRafRef.current === null) {
         outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
       }
     }
+
+    const removeScrollListener = terminal.onScroll(() => {
+      if (terminal.buffer.active.viewportY === terminal.buffer.active.baseY && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
+        outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
+      }
+    })
 
     terminal.onData((data) => {
       if (detectHeavyCliCommand(data)) {
@@ -390,7 +492,7 @@ function TerminalInstance({
         // Safely enable Hardware Acceleration ONLY after terminal is fitted into DOM
         rendererDisposeRef.current = attachPreferredRenderer(
           terminal,
-          resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current),
+          preferredRenderer,
           setEffectiveRenderer
         ).dispose
 
@@ -410,33 +512,33 @@ function TerminalInstance({
       rendererDisposeRef.current = null
       osc52DisposeRef.current?.()
       osc52DisposeRef.current = null
-      pendingOutputRef.current = ''
-      onTerminalRef?.(null)
+      const textarea = terminal.textarea as (HTMLTextAreaElement & { __nutshellCompositionCleanup?: () => void }) | undefined
+      textarea?.__nutshellCompositionCleanup?.()
+      pendingOutputChunksRef.current = []
+      pendingOutputBytesRef.current = 0
+      onTerminalRefRef.current?.(null)
       removeDataListener(); removeCloseListener(); removeErrorListener()
       removeReconnectingListener?.(); removeReconnectedListener?.()
+      removeScrollListener.dispose()
       resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown); currentContainer.removeEventListener('contextmenu', handleContextMenu, true); currentContainer.removeEventListener('paste', handlePasteEvent, true)
       try { terminal.dispose() } catch { }
       terminalRef.current = null
     }
-  }, [sessionId, aiCompatibilityMode, terminalRenderer, pasteToTerminal, writeClipboardText, onTerminalRef, allowRemoteClipboardWrite])
+  }, [sessionId, aiCompatibilityMode, terminalRenderer, pasteToTerminal, writeClipboardText, allowRemoteClipboardWrite, colorTheme])
 
   useEffect(() => {
     const terminal = terminalRef.current
     // @ts-ignore
     if (!terminal || terminal._core?._isDisposed || (terminal as any)._isDisposed) return
     try {
-      const activeThemeId = frozenThemeRef.current?.terminalThemeId ?? selectedTerminalTheme
-      const useGlass = frozenThemeRef.current ? frozenThemeRef.current.useGlass : document.documentElement.classList.contains('theme-glass')
-      const theme = terminalThemes[activeThemeId] || terminalThemes.default
-      const termTheme = useGlass
-        ? { ...theme, background: 'transparent' }
-        : theme
+      const { termTheme } = resolveTerminalVisualState(selectedTerminalTheme, colorTheme, frozenThemeRef.current)
 
       terminal.options.theme = termTheme
       terminal.options.fontSize = fontSize
       terminal.options.fontFamily = fontFamily
       terminal.options.scrollback = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).scrollback
       terminal.options.convertEol = !aiCompatibilityMode
+      terminal.options.smoothScrollDuration = 0
       terminal.options.customGlyphs = true
       terminal.options.rescaleOverlappingGlyphs = true
       terminal.options.minimumContrastRatio = 1
@@ -457,12 +559,10 @@ function TerminalInstance({
 
   return (
     <div className={cn('flex flex-col relative min-h-0 overflow-hidden', className)} style={{
-      backgroundColor: colorTheme === 'theme-glass'
-        ? 'rgba(15, 25, 45, 0.35)'
-        : (terminalThemes[selectedTerminalTheme] || terminalThemes.default).background
+      backgroundColor: resolveTerminalVisualState(selectedTerminalTheme, colorTheme, frozenThemeRef.current).containerBackground
     }}>
       <div className="flex items-center justify-between gap-2 px-3 py-1 border-b border-border/60 bg-card/70 text-[11px] text-muted-foreground shrink-0">
-        <span>渲染器: {formatRendererModeLabel(effectiveRenderer)}</span>
+        <span>{`引擎: ${engine === 'rust' ? 'Rust' : 'Node'} · 渲染器: ${formatRendererModeLabel(effectiveRenderer)}`}</span>
         <span>
           {getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).label}
           {interactionProfileRef.current === 'heavy-cli' ? ' · 主题已锁定' : ''}
@@ -480,7 +580,7 @@ function TerminalInstance({
           <button onClick={() => setShowSearch(false)} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
         </div>
       )}
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden xterm-container" onClick={() => setCtxMenu(null)} />
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden xterm-container" onClick={() => { setCtxMenu(null); terminalRef.current?.focus() }} />
 
       {/* Right-click context menu */}
       {
@@ -543,11 +643,14 @@ function TerminalInstance({
 }
 
 // Main panel with split support + AI assistant
-export function TerminalPanel({ sessionId, tabId, isActive }: TerminalPanelProps) {
+export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: TerminalPanelProps) {
   const [splitMode, setSplitMode] = useState<'none' | 'horizontal' | 'vertical'>('none')
   const [showAI, setShowAI] = useState(false)
   const terminalInstanceRef = useRef<Terminal | null>(null)
   const { toast } = useToast()
+  const handlePrimaryTerminalRef = useCallback((ref: Terminal | null) => {
+    terminalInstanceRef.current = ref
+  }, [])
 
   const handleSplit = (mode: 'horizontal' | 'vertical') => {
     toast('warning', '分屏共享同一终端会话', '像 opencode 这类重交互 CLI 在分屏下更容易卡顿；建议单窗口使用。', 5000)
@@ -628,16 +731,16 @@ export function TerminalPanel({ sessionId, tabId, isActive }: TerminalPanelProps
         </div>
 
         {splitMode === 'none' ? (
-          <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
+          <TerminalInstance sessionId={sessionId} isActive={isActive} engine={engine} className="flex-1" onTerminalRef={handlePrimaryTerminalRef} />
         ) : splitMode === 'vertical' ? (
           <div className="flex flex-1 overflow-hidden">
-            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1 border-r border-border" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
-            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1" />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} engine={engine} className="flex-1 border-r border-border" onTerminalRef={handlePrimaryTerminalRef} />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} engine={engine} className="flex-1" />
           </div>
         ) : (
           <div className="flex flex-col flex-1 overflow-hidden">
-            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1 border-b border-border" onTerminalRef={(ref) => { terminalInstanceRef.current = ref }} />
-            <TerminalInstance sessionId={sessionId} isActive={isActive} className="flex-1" />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} engine={engine} className="flex-1 border-b border-border" onTerminalRef={handlePrimaryTerminalRef} />
+            <TerminalInstance sessionId={sessionId} isActive={isActive} engine={engine} className="flex-1" />
           </div>
         )}
       </div>

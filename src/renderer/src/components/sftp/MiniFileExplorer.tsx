@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import {
   FolderOpen, FileText, ArrowUp, RefreshCw, Home, ChevronRight, AlertCircle, Upload,
-  Trash2, FolderPlus, Pencil, Download, Copy, ClipboardCopy, Search, X
+  Trash2, FolderPlus, Pencil, Download, Copy, ClipboardCopy, Search, X, Terminal
 } from 'lucide-react'
 import { cn, formatBytes, formatDate } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
@@ -132,19 +132,24 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
 
     if (e.dataTransfer.files.length === 0) return
 
-    let fileCount = 0
-    let skippedDirCount = 0
-    for (let i = 0; i < e.dataTransfer.files.length; i++) {
-      const file = e.dataTransfer.files[i]
+    // Extract file info synchronously because DataTransfer.files object gets wiped by the browser upon the first 'await'
+    const droppedFiles = Array.from(e.dataTransfer.files).map(file => {
       let filePath = ''
       try {
         filePath = window.api.file?.getPathForFile?.(file) || (file as any).path || ''
       } catch {
         filePath = (file as any).path || ''
       }
+      return { file, filePath, fileName: filePath.split(/[/\\]/).pop() || file.name, size: file.size || 0 }
+    })
+
+    let fileCount = 0
+    let skippedDirCount = 0
+    for (const dropItem of droppedFiles) {
+      const { file, filePath, fileName } = dropItem
       if (!filePath) continue
 
-      let localSize = file.size || 0
+      let localSize = dropItem.size
       let isDirectory = false
       let resolvedLocalMeta = false
 
@@ -177,7 +182,6 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
         // Fallback to browser-provided file metadata only
       }
 
-      const fileName = filePath.split(/[/\\]/).pop() || file.name
       const dest = `${remotePath}/${fileName}`
       const transferId = crypto.randomUUID()
 
@@ -255,6 +259,28 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
   const closeContextMenu = useCallback(() => {
     setContextMenu((prev) => ({ ...prev, visible: false }))
   }, [])
+
+  const handleOpenInTerminal = useCallback((targetFile: FileInfo | null) => {
+    closeContextMenu()
+    let targetPath = remotePath
+    if (targetFile && targetFile.isDirectory) {
+      targetPath = remotePath === '/' ? `/${targetFile.filename}` : `${remotePath}/${targetFile.filename}`
+    }
+    
+    window.api.ssh.write(sessionId, `cd "${targetPath}"\r`)
+    
+    // Switch the main workspace tab to the terminal tab
+    const state = useConnectionStore.getState()
+    const terminalTab = state.tabs.find(t => t.sessionId === sessionId && t.type === 'terminal')
+    
+    if (terminalTab) {
+      state.setActiveTab(terminalTab.id)
+      // Tell terminal to auto-focus immediately
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('terminal:focus', { detail: { tabId: terminalTab.id } }))
+      }, 100)
+    }
+  }, [sessionId, remotePath, closeContextMenu])
 
   // Auto-adjust menu position when it overflows viewport
   useEffect(() => {
@@ -637,6 +663,14 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
                   复制文件名
                 </button>
                 <div className="border-t border-border my-0.5" />
+                <button
+                  onClick={() => handleOpenInTerminal(contextMenu.file!)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors text-primary"
+                >
+                  <Terminal className="w-3 h-3" />
+                  在终端中打开目录
+                </button>
+                <div className="border-t border-border my-0.5" />
                 {/* Download single file or folder */}
                 <button
                   onClick={() => handleDownloadSingle(contextMenu.file!)}
@@ -699,6 +733,13 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
                 >
                   <Copy className="w-3 h-3" />
                   复制当前路径
+                </button>
+                <button
+                  onClick={() => handleOpenInTerminal(null)}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors text-primary"
+                >
+                  <Terminal className="w-3 h-3" />
+                  在终端中打开当前目录
                 </button>
                 {/* Batch download from background (no specific file right-clicked) */}
                 {selectedFiles.size > 0 && (

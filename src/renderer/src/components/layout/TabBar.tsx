@@ -40,8 +40,10 @@ export function TabBar() {
   const addTab = useConnectionStore((state) => state.addTab)
   const connections = useConnectionStore((state) => state.connections)
   const [contextMenu, setContextMenu] = useState<{
-    x: number
-    y: number
+    x: number | 'auto'
+    y: number | 'auto'
+    right: number | 'auto'
+    bottom: number | 'auto'
     tab: Tab
   } | null>(null)
   const [workspaceDialog, setWorkspaceDialog] = useState<{ tab: Tab } | null>(null)
@@ -69,7 +71,11 @@ export function TabBar() {
 
   const handleContextMenu = (e: React.MouseEvent, tab: Tab) => {
     e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, tab })
+    const x = e.clientX > window.innerWidth / 2 ? 'auto' : e.clientX
+    const right = e.clientX > window.innerWidth / 2 ? window.innerWidth - e.clientX : 'auto'
+    const y = e.clientY > window.innerHeight / 2 ? 'auto' : e.clientY
+    const bottom = e.clientY > window.innerHeight / 2 ? window.innerHeight - e.clientY : 'auto'
+    setContextMenu({ x, y, right, bottom, tab })
   }
 
   const openNewTab = (tab: Tab, type: 'sftp' | 'monitor' | 'docker') => {
@@ -144,8 +150,8 @@ export function TabBar() {
         <>
           <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
           <div
-            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px]"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
+            className="fixed z-[100] bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px] max-h-[80vh] overflow-y-auto"
+            style={{ left: contextMenu.x, top: contextMenu.y, right: contextMenu.right, bottom: contextMenu.bottom }}
           >
             <button
               onClick={() => openNewTab(contextMenu.tab, 'sftp')}

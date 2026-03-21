@@ -528,19 +528,24 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
 
     // External OS file drop (from Windows Explorer etc.)
     if (e.dataTransfer.files.length > 0) {
-      let queuedCount = 0
-      let skippedDirCount = 0
-      for (let i = 0; i < e.dataTransfer.files.length; i++) {
-        const file = e.dataTransfer.files[i]
+      // Extract file info synchronously because DataTransfer.files object gets wiped by the browser upon the first 'await'
+      const droppedFiles = Array.from(e.dataTransfer.files).map(file => {
         let filePath = ''
         try {
           filePath = window.api.file?.getPathForFile?.(file) || (file as any).path || ''
         } catch {
           filePath = (file as any).path || ''
         }
+        return { file, filePath, fileName: filePath.split(/[/\\]/).pop() || file.name, size: file.size || 0 }
+      })
+
+      let queuedCount = 0
+      let skippedDirCount = 0
+      for (const dropItem of droppedFiles) {
+        const { file, filePath, fileName } = dropItem
         if (!filePath) continue
 
-        let localSize = file.size || 0
+        let localSize = dropItem.size
         let isDirectory = false
         let resolvedLocalMeta = false
 
@@ -572,8 +577,6 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
         } catch {
           // Fallback to browser-provided file metadata only
         }
-
-        const fileName = filePath.split(/[/\\]/).pop() || file.name
 
         if (isDirectory) {
           const transferId = crypto.randomUUID()

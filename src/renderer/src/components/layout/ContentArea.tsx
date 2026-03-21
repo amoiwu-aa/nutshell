@@ -98,7 +98,7 @@ export function ContentArea() {
         >
           <Suspense fallback={<LoadingFallback name="终端" />}>
             {tab.type === 'terminal' && (
-              <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} isActive={isActive} />
+              <TerminalPanel sessionId={tab.sessionId} tabId={tab.id} isActive={isActive} engine={tab.engine || 'node'} />
             )}
           </Suspense>
           <Suspense fallback={<LoadingFallback name="文件管理器" />}>

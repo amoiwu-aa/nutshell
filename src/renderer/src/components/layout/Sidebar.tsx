@@ -35,13 +35,17 @@ export function Sidebar() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['default']))
   const [searchQuery, setSearchQuery] = useState('')
   const [contextMenu, setContextMenu] = useState<{
-    x: number
-    y: number
+    x: number | 'auto'
+    y: number | 'auto'
+    right: number | 'auto'
+    bottom: number | 'auto'
     connection: ConnectionConfig
   } | null>(null)
   const [groupContextMenu, setGroupContextMenu] = useState<{
-    x: number
-    y: number
+    x: number | 'auto'
+    y: number | 'auto'
+    right: number | 'auto'
+    bottom: number | 'auto'
     groupName: string
   } | null>(null)
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
@@ -147,13 +151,24 @@ export function Sidebar() {
 
   const handleContextMenu = (e: React.MouseEvent, connection: ConnectionConfig) => {
     e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, connection })
+    const x = e.clientX > window.innerWidth / 2 ? 'auto' : e.clientX
+    const right = e.clientX > window.innerWidth / 2 ? window.innerWidth - e.clientX : 'auto'
+    const y = e.clientY > window.innerHeight / 2 ? 'auto' : e.clientY
+    // Add 10px to mouse y so menu appears to grow directly upwards from the cursor without covering it completely
+    const bottom = e.clientY > window.innerHeight / 2 ? window.innerHeight - e.clientY : 'auto'
+    
+    setContextMenu({ x, y, right, bottom, connection })
   }
 
   const handleGroupContextMenu = (e: React.MouseEvent, groupName: string) => {
     e.preventDefault()
     e.stopPropagation()
-    setGroupContextMenu({ x: e.clientX, y: e.clientY, groupName })
+    const x = e.clientX > window.innerWidth / 2 ? 'auto' : e.clientX
+    const right = e.clientX > window.innerWidth / 2 ? window.innerWidth - e.clientX : 'auto'
+    const y = e.clientY > window.innerHeight / 2 ? 'auto' : e.clientY
+    const bottom = e.clientY > window.innerHeight / 2 ? window.innerHeight - e.clientY : 'auto'
+    
+    setGroupContextMenu({ x, y, right, bottom, groupName })
   }
 
   const handleRenameGroup = async (oldName: string, newName: string) => {
@@ -310,7 +325,7 @@ export function Sidebar() {
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-background rounded"
                         onClick={(e) => {
                           e.stopPropagation()
-                          setContextMenu({ x: e.clientX, y: e.clientY, connection: conn })
+                          handleContextMenu(e, conn)
                         }}
                       >
                         <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
@@ -396,8 +411,8 @@ export function Sidebar() {
         <>
           <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} onKeyDown={(e) => e.key === 'Escape' && setContextMenu(null)} />
           <div
-            className="fixed z-50 bg-popover text-popover-foreground border border-border rounded-md shadow-lg py-1 min-w-[180px] context-menu select-none"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
+            className="fixed z-[100] bg-popover text-popover-foreground border border-border rounded-md shadow-lg py-1 min-w-[180px] context-menu select-none max-h-[80vh] overflow-y-auto"
+            style={{ left: contextMenu.x, top: contextMenu.y, right: contextMenu.right, bottom: contextMenu.bottom }}
             role="menu"
             aria-label="连接操作菜单"
           >
@@ -486,8 +501,8 @@ export function Sidebar() {
         <>
           <div className="fixed inset-0 z-50" onClick={() => setGroupContextMenu(null)} onKeyDown={(e) => e.key === 'Escape' && setGroupContextMenu(null)} />
           <div
-            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] context-menu"
-            style={{ left: groupContextMenu.x, top: groupContextMenu.y }}
+            className="fixed z-[100] bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px] context-menu max-h-[80vh] overflow-y-auto"
+            style={{ left: groupContextMenu.x, top: groupContextMenu.y, right: groupContextMenu.right, bottom: groupContextMenu.bottom }}
             role="menu"
             aria-label="分组操作菜单"
           >

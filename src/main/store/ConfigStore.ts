@@ -61,6 +61,7 @@ interface AppSettings {
   terminalRenderer: 'auto' | 'webgl' | 'canvas'
   aiCompatibilityMode: boolean
   allowRemoteClipboardWrite: boolean
+  useRustSshEngine: boolean
   language: string
   sidebarWidth: number
   autoReconnect: boolean
@@ -123,6 +124,7 @@ const defaultSettings: AppSettings = {
   terminalRenderer: 'auto',
   aiCompatibilityMode: false,
   allowRemoteClipboardWrite: true,
+  useRustSshEngine: false,
   language: 'zh-CN',
   sidebarWidth: 260,
   autoReconnect: true,

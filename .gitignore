@@ -1,6 +1,7 @@
 node_modules/
 dist/
 out/
+native/nutshell-core/target/
 .env
 *.log
 .DS_Store

@@ -159,13 +159,16 @@ class AIService {
 [TOOL:list_directory] path=/path/to/dir [/TOOL]
 [TOOL:search_code] query=搜索内容 [/TOOL]
 [TOOL:run_command] cmd=要执行的命令 [/TOOL]
+[TOOL:read_multiple_files] paths=/a,/b,/c [/TOOL]
+[TOOL:scan_project] path=/project/root [/TOOL]
+[TOOL:project_summary] path=/project/root [/TOOL]
 
 规则：
 - 每次回复只调用一个工具
 - 工具调用后等待结果再决定下一步
 - 完成任务后正常回复文本，不调用工具
 - 写文件时给出完整内容，不要省略
-- 对危险操作先说明再执行
+- 如果 run_command 返回 requiresConfirmation=true 或 blocked=true，先向用户解释风险，再等待用户确认，不要换个命令偷偷继续执行
 - 用中文回复`
 
     const fullMessages: ChatMessage[] = [

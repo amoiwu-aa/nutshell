@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { sshManager } from '../ssh/SSHManager'
+import { rustCoreService } from '../rust/RustCoreService'
 
 export interface DiskInfo {
   filesystem: string
@@ -170,8 +171,32 @@ class ServerMonitor {
     this.enabledModules.delete(sessionId)
   }
 
+  private async exec(sessionId: string, command: string, timeoutMs: number = 15000): Promise<string> {
+    if (sshManager.isConnected(sessionId)) {
+      return sshManager.exec(sessionId, command, timeoutMs)
+    }
+
+    if (!rustCoreService.hasSshSession(sessionId)) {
+      throw new Error('Session not connected')
+    }
+
+    const result = await rustCoreService.runCommand({
+      sessionId,
+      command,
+      timeoutMs,
+      requireConfirmation: true
+    })
+
+    if (result.blocked) {
+      throw new Error(result.reason || '命令执行被安全策略阻止')
+    }
+
+    return [result.stdout, result.stderr].filter(Boolean).join(result.stdout && result.stderr ? '\n' : '')
+  }
+
   private async collectAndSend(sessionId: string): Promise<void> {
-    if (!sshManager.isConnected(sessionId)) {
+    const rustAvailable = await rustCoreService.ping().then(() => true).catch(() => false)
+    if (!sshManager.isConnected(sessionId) && !rustAvailable) {
       this.stop(sessionId, true)
       return
     }
@@ -189,6 +214,8 @@ class ServerMonitor {
     const cmdMap: string[] = []
 
     // Core metrics (always)
+    commands.push(`cat /proc/uptime`)
+    cmdMap.push('serverTime')
     commands.push(`grep 'cpu ' /proc/stat`)
     cmdMap.push('cpu')
     commands.push(`cat /proc/loadavg`)
@@ -230,7 +257,7 @@ class ServerMonitor {
     }
 
     const combined = commands.join(' ; echo "---SEP---" ; ')
-    const output = await sshManager.exec(sessionId, combined)
+    const output = await this.exec(sessionId, combined)
     const parts = output.split('---SEP---').map((s) => s.trim())
 
     const getPart = (name: string): string => {
@@ -317,14 +344,18 @@ class ServerMonitor {
       }
     }
 
+    // --- Server Time ---
+    const serverTimeOutput = getPart('serverTime')
+    const serverTime = parseFloat(serverTimeOutput.split(/\s+/)[0]) || (Date.now() / 1000)
+
     // --- Network (per-interface) ---
     let rxRate = 0, txRate = 0
     const interfaceRates: { name: string; rx: number; tx: number }[] = []
     const netOutput = getPart('network')
     if (netOutput) {
-      const now = Date.now()
       const prevStats = this.prevNetworkStats.get(sessionId)
-      const timeDiff = prevStats ? (now - prevStats.time) / 1000 : 0
+      // Use exact server monotonic time for drift-free rate calculation
+      const timeDiff = prevStats ? (serverTime - prevStats.time) : 0
 
       let totalRx = 0, totalTx = 0
       const currentInterfaces = new Map<string, { rx: number; tx: number }>()
@@ -336,10 +367,15 @@ class ServerMonitor {
           const rx = parseInt(cols[1]) || 0
           const tx = parseInt(cols[2]) || 0
           currentInterfaces.set(name, { rx, tx })
-          totalRx += rx
-          totalTx += tx
+          
+          // Exclude virtual/container interfaces from global aggregate to prevent double counting
+          const isVirtual = /^(docker|veth|br-|cali|flannel|cni|virbr|lxc)/i.test(name)
+          if (!isVirtual) {
+            totalRx += rx
+            totalTx += tx
+          }
 
-          if (prevStats && timeDiff > 0) {
+          if (prevStats && timeDiff > 0.1) {
             const prevIface = prevStats.interfaces.get(name)
             if (prevIface) {
               interfaceRates.push({
@@ -356,13 +392,13 @@ class ServerMonitor {
         }
       }
 
-      if (prevStats && timeDiff > 0) {
+      if (prevStats && timeDiff > 0.1) {
         rxRate = Math.max(0, (totalRx - prevStats.total.rx) / timeDiff)
         txRate = Math.max(0, (totalTx - prevStats.total.tx) / timeDiff)
       }
 
       this.prevNetworkStats.set(sessionId, {
-        time: now,
+        time: serverTime,
         total: { rx: totalRx, tx: totalTx },
         interfaces: currentInterfaces
       })
@@ -423,7 +459,7 @@ class ServerMonitor {
       `cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo "Linux"`,
       `uname -sr`, `nproc`, `uname -m`
     ].join(' ; echo "---SEP---" ; ')
-    const output = await sshManager.exec(sessionId, cmd, 10000)
+    const output = await this.exec(sessionId, cmd, 10000)
     const parts = output.split('---SEP---').map((s) => s.trim())
     return {
       hostname: parts[0] || 'unknown', os: parts[1] || 'Linux',
@@ -432,7 +468,7 @@ class ServerMonitor {
   }
 
   async getProcesses(sessionId: string): Promise<ProcessInfo[]> {
-    const output = await sshManager.exec(sessionId, 'ps aux --sort=-%cpu | head -51')
+    const output = await this.exec(sessionId, 'ps aux --sort=-%cpu | head -51')
     return output.trim().split('\n').slice(1)
       .filter((l) => l.trim().length > 0)
       .map((l) => {
@@ -443,7 +479,7 @@ class ServerMonitor {
 
   async getListeningPorts(sessionId: string): Promise<PortInfo[]> {
     // Try ss first, fall back to netstat
-    const output = await sshManager.exec(sessionId, `ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null`, 15000)
+    const output = await this.exec(sessionId, `ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null`, 15000)
     const lines = output.trim().split('\n')
     const ports: PortInfo[] = []
 
@@ -503,14 +539,14 @@ class ServerMonitor {
   async killProcess(sessionId: string, pid: number, signal: number = 9): Promise<string> {
     if (!Number.isFinite(pid) || pid <= 0) throw new Error('Invalid PID')
     if (signal !== 9 && signal !== 15) throw new Error('Invalid signal, use 9 (SIGKILL) or 15 (SIGTERM)')
-    return sshManager.exec(sessionId, `kill -${signal} ${pid} 2>&1`)
+    return this.exec(sessionId, `kill -${signal} ${pid} 2>&1`)
   }
 
   async killProcesses(sessionId: string, pids: number[], signal: number = 9): Promise<string> {
     const validPids = pids.filter((p) => Number.isFinite(p) && p > 0)
     if (validPids.length === 0) throw new Error('No valid PIDs')
     if (signal !== 9 && signal !== 15) throw new Error('Invalid signal')
-    return sshManager.exec(sessionId, `kill -${signal} ${validPids.join(' ')} 2>&1`)
+    return this.exec(sessionId, `kill -${signal} ${validPids.join(' ')} 2>&1`)
   }
 
   stopAll(): void {
@@ -521,6 +557,10 @@ class ServerMonitor {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('monitor:error', sessionId, message)
     }
+  }
+
+  isUsingNodeSsh(sessionId: string): boolean {
+    return sshManager.isConnected(sessionId)
   }
 }
 

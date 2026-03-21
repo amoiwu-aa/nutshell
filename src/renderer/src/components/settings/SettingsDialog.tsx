@@ -414,6 +414,46 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
                   </button>
                 </div>
 
+                <div>
+                  <h3 className="text-sm font-medium mb-3">实验性 Rust SSH 引擎</h3>
+                  <button
+                    onClick={() => setSettings({ useRustSshEngine: !settings.useRustSshEngine })}
+                    className={cn(
+                      'w-full rounded-xl border p-4 text-left transition-colors',
+                      settings.useRustSshEngine
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/50'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">使用 Rust SSH 引擎</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          新建终端连接时优先使用 Rust sidecar 建立 SSH shell，逐步替代当前 Node `ssh2` 实现。
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          当前只覆盖基础终端连接、输入和窗口调整；SFTP、监控、端口转发仍走现有实现。
+                        </p>
+                      </div>
+                      <div
+                        className={cn(
+                          'mt-0.5 inline-flex h-6 w-11 shrink-0 rounded-full border transition-colors',
+                          settings.useRustSshEngine
+                            ? 'border-primary bg-primary'
+                            : 'border-border bg-muted'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'm-[2px] h-5 w-5 rounded-full bg-white transition-transform',
+                            settings.useRustSshEngine ? 'translate-x-5' : 'translate-x-0'
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
                 <TerminalDiagnostics sessionId={sessionId} />
               </div>
             )}

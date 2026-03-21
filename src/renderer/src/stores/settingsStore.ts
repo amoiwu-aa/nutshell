@@ -28,6 +28,7 @@ export interface AppSettings {
   terminalRenderer: 'auto' | 'webgl' | 'canvas'
   aiCompatibilityMode: boolean
   allowRemoteClipboardWrite: boolean
+  useRustSshEngine: boolean
   language: string
   sidebarWidth: number
   monitorModules: MonitorModules
@@ -36,6 +37,7 @@ export interface AppSettings {
 
 interface SettingsState {
   settings: AppSettings
+  loaded: boolean
   setSettings: (settings: Partial<AppSettings>) => void
   setSettingsMemOnly: (settings: Partial<AppSettings>) => void
   loadSettings: () => Promise<void>
@@ -50,11 +52,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     terminalRenderer: 'auto',
     aiCompatibilityMode: false,
     allowRemoteClipboardWrite: true,
+    useRustSshEngine: false,
     language: 'zh-CN',
     sidebarWidth: 260,
     monitorModules: defaultMonitorModules,
     savedKeys: []
   },
+  loaded: false,
 
   setSettings: (newSettings) =>
     set((state) => {
@@ -75,7 +79,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ...result.settings,
         monitorModules: { ...defaultMonitorModules, ...result.settings.monitorModules }
       }
-      set({ settings })
+      set({ settings, loaded: true })
 
       if (settings.theme === 'dark') {
         document.documentElement.classList.add('dark')
@@ -84,10 +88,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       }
 
       // Apply saved color theme
+      Array.from(document.documentElement.classList)
+        .filter((className) => className.startsWith('theme-'))
+        .forEach((className) => document.documentElement.classList.remove(className))
+
       const ct = (settings as any).colorTheme
       if (ct) {
         document.documentElement.classList.add(ct)
       }
+      return
     }
+
+    set({ loaded: true })
   }
 }))

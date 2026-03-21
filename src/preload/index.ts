@@ -171,6 +171,12 @@ const api = {
         callback(sessionId, data)
       ipcRenderer.on('monitor:data', handler)
       return () => ipcRenderer.removeListener('monitor:data', handler)
+    },
+    onError: (callback: (sessionId: string, message: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, sessionId: string, message: string) =>
+        callback(sessionId, message)
+      ipcRenderer.on('monitor:error', handler)
+      return () => ipcRenderer.removeListener('monitor:error', handler)
     }
   },
 
@@ -390,6 +396,30 @@ const api = {
   clipboard: {
     readText: () => clipboard.readText(),
     writeText: (text: string) => clipboard.writeText(text)
+  },
+
+  rustCore: {
+    status: () => ipcRenderer.invoke('rustCore:status'),
+    migrationPlan: () => ipcRenderer.invoke('rustCore:migrationPlan'),
+    aiBlueprint: () => ipcRenderer.invoke('rustCore:aiBlueprint'),
+    runCommand: (params: {
+      sessionId: string
+      command: string
+      cwd?: string
+      timeoutMs?: number
+      env?: Array<{ key: string; value: string }>
+    }) => ipcRenderer.invoke('rustCore:runCommand', params),
+    listDir: (params: { sessionId: string; path: string }) => ipcRenderer.invoke('rustCore:listDir', params),
+    readFile: (params: { sessionId: string; path: string; maxBytes?: number }) => ipcRenderer.invoke('rustCore:readFile', params),
+    search: (params: { sessionId: string; rootPath: string; pattern: string; limit?: number }) => ipcRenderer.invoke('rustCore:search', params),
+    writeFile: (params: { sessionId: string; path: string; content: string; createDirs?: boolean }) => ipcRenderer.invoke('rustCore:writeFile', params),
+    statPath: (params: { sessionId: string; path: string }) => ipcRenderer.invoke('rustCore:statPath', params),
+    mkdir: (params: { sessionId: string; path: string; recursive?: boolean }) => ipcRenderer.invoke('rustCore:mkdir', params),
+    removePath: (params: { sessionId: string; path: string; recursive?: boolean }) => ipcRenderer.invoke('rustCore:removePath', params),
+    movePath: (params: { sessionId: string; fromPath: string; toPath: string }) => ipcRenderer.invoke('rustCore:movePath', params),
+    readMultipleFiles: (params: { sessionId: string; paths: string[]; maxBytesPerFile?: number }) => ipcRenderer.invoke('rustCore:readMultipleFiles', params),
+    scanProject: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:scanProject', params),
+    projectSummary: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:projectSummary', params)
   },
 
   // Config store

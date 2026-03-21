@@ -30,6 +30,7 @@ function AppContent() {
   const bottomPanelHeight = useConnectionStore((state) => state.bottomPanelHeight)
   const setBottomPanelHeight = useConnectionStore((state) => state.setBottomPanelHeight)
   const loadSettings = useSettingsStore((state) => state.loadSettings)
+  const settingsLoaded = useSettingsStore((state) => state.loaded)
   const setSettings = useSettingsStore((state) => state.setSettings)
   const setSettingsMemOnly = useSettingsStore((state) => state.setSettingsMemOnly)
   const aiCompatibilityMode = useSettingsStore((state) => state.settings.aiCompatibilityMode)
@@ -155,6 +156,7 @@ function AppContent() {
             sessionId: result.sessionId,
             name: `${config.name} - 终端`,
             type: 'terminal',
+            engine: result.engine || 'node',
             connected: true
           }
           addTab(terminalTab)
@@ -320,6 +322,17 @@ function AppContent() {
   )
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  if (!settingsLoaded) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-card/80 px-5 py-3 shadow-lg">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-sm">正在加载界面设置...</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-screen bg-background layout-no-select">

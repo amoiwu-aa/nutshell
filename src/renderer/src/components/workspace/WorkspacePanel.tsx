@@ -449,8 +449,10 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
   const osc52DisposeRef = useRef<(() => void) | null>(null)
   const cdSentRef = useRef(false)
   const isActiveRef = useRef(isActive)
-  const pendingOutputRef = useRef('')
+  const pendingOutputChunksRef = useRef<string[]>([])
+  const pendingOutputBytesRef = useRef(0)
   const outputRafRef = useRef<number | null>(null)
+  const isComposingRef = useRef(false)
   const backpressureNotifiedRef = useRef(false)
   const interactionProfileRef = useRef<TerminalInteractionProfile>('default')
   const frozenThemeRef = useRef(false)
@@ -460,6 +462,44 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
   const terminalRenderer = useSettingsStore((state) => state.settings.terminalRenderer)
   const allowRemoteClipboardWrite = useSettingsStore((state) => state.settings.allowRemoteClipboardWrite)
   const currentProfile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+
+  const dequeueOutputChunk = useCallback((maxBytes: number) => {
+    if (pendingOutputChunksRef.current.length === 0) return ''
+    let remaining = maxBytes
+    let output = ''
+
+    while (pendingOutputChunksRef.current.length > 0 && remaining > 0) {
+      const head = pendingOutputChunksRef.current[0]
+      if (head.length <= remaining) {
+        output += head
+        remaining -= head.length
+        pendingOutputBytesRef.current -= head.length
+        pendingOutputChunksRef.current.shift()
+      } else {
+        output += head.slice(0, remaining)
+        pendingOutputChunksRef.current[0] = head.slice(remaining)
+        pendingOutputBytesRef.current -= remaining
+        remaining = 0
+      }
+    }
+
+    return output
+  }, [])
+
+  const trimOutputQueue = useCallback((maxBytes: number) => {
+    while (pendingOutputBytesRef.current > maxBytes && pendingOutputChunksRef.current.length > 0) {
+      const head = pendingOutputChunksRef.current[0]
+      const overflow = pendingOutputBytesRef.current - maxBytes
+      if (head.length <= overflow) {
+        pendingOutputBytesRef.current -= head.length
+        pendingOutputChunksRef.current.shift()
+      } else {
+        pendingOutputChunksRef.current[0] = head.slice(overflow)
+        pendingOutputBytesRef.current -= overflow
+        break
+      }
+    }
+  }, [])
 
   const pasteToTerminal = useCallback((text: string) => {
     const term = termRef.current
@@ -478,15 +518,25 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       }
       return
     }
-    if (termRef.current && pendingOutputRef.current && outputRafRef.current === null) {
+    if (termRef.current && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
       outputRafRef.current = requestAnimationFrame(() => {
         outputRafRef.current = null
-        if (!termRef.current || !pendingOutputRef.current || !isActiveRef.current) return
-        termRef.current.write(pendingOutputRef.current)
-        pendingOutputRef.current = ''
+        if (!termRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
+        const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
+        const chunk = dequeueOutputChunk(profile.chunkSize)
+        if (!chunk) return
+        termRef.current.write(chunk)
+        if (pendingOutputChunksRef.current.length > 0) {
+          outputRafRef.current = requestAnimationFrame(() => {
+            outputRafRef.current = null
+            if (!termRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
+            const rest = dequeueOutputChunk(Number.MAX_SAFE_INTEGER)
+            if (rest) termRef.current.write(rest)
+          })
+        }
       })
     }
-  }, [isActive])
+  }, [isActive, aiCompatibilityMode])
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return
@@ -513,6 +563,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       customGlyphs: true,
       rescaleOverlappingGlyphs: true,
       minimumContrastRatio: 1,
+      smoothScrollDuration: 0,
     })
     const fit = new FitAddon()
     const unicode11Addon = new Unicode11Addon()
@@ -520,9 +571,31 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
     term.loadAddon(unicode11Addon)
     term.unicode.activeVersion = TERMINAL_UNICODE_VERSION
     term.open(containerRef.current)
+    term.options.overviewRulerWidth = 0
     fit.fit()
     termRef.current = term
     fitAddonRef.current = fit
+
+    const textarea = term.textarea
+    if (textarea) {
+      textarea.style.zIndex = '1'
+      textarea.setAttribute('lang', 'zh-CN')
+      textarea.setAttribute('autocomplete', 'off')
+      textarea.setAttribute('autocorrect', 'off')
+      textarea.setAttribute('autocapitalize', 'off')
+      textarea.setAttribute('spellcheck', 'false')
+      const handleCompositionStart = () => { isComposingRef.current = true }
+      const handleCompositionEnd = () => {
+        isComposingRef.current = false
+        requestAnimationFrame(() => term.focus())
+      }
+      textarea.addEventListener('compositionstart', handleCompositionStart)
+      textarea.addEventListener('compositionend', handleCompositionEnd)
+      ;(textarea as any).__nutshellCompositionCleanup = () => {
+        textarea.removeEventListener('compositionstart', handleCompositionStart)
+        textarea.removeEventListener('compositionend', handleCompositionEnd)
+      }
+    }
 
     osc52DisposeRef.current = registerOsc52ClipboardHandler(term, {
       enabled: allowRemoteClipboardWrite
@@ -559,6 +632,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
     }
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (isComposingRef.current || e.isComposing) return true
       if (e.ctrlKey && e.shiftKey && e.key === 'C') { const s = term.getSelection(); if (s) copyText(s); return false }
       if (e.ctrlKey && e.shiftKey && e.key === 'V') { pasteFromClipboard(); return false }
       if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v') { pasteFromClipboard(); return false }
@@ -584,36 +658,47 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
 
     const flushOutput = () => {
       outputRafRef.current = null
-      if (!pendingOutputRef.current || !isActiveRef.current) return
+      if (pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-      const chunk = pendingOutputRef.current.slice(0, profile.chunkSize)
-      pendingOutputRef.current = pendingOutputRef.current.slice(chunk.length)
+      const chunk = dequeueOutputChunk(profile.chunkSize)
+      if (!chunk) return
       term.write(chunk)
 
-      if (pendingOutputRef.current) {
+      if (pendingOutputChunksRef.current.length > 0) {
         outputRafRef.current = requestAnimationFrame(flushOutput)
       } else {
         backpressureNotifiedRef.current = false
       }
     }
     const queueOutput = (data: string) => {
-      pendingOutputRef.current += data
+      pendingOutputChunksRef.current.push(data)
+      pendingOutputBytesRef.current += data.length
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
       const maxPending = isActiveRef.current ? profile.maxPendingBytes : profile.maxPendingWhenHidden
-      if (pendingOutputRef.current.length > maxPending) {
-        pendingOutputRef.current = pendingOutputRef.current.slice(-maxPending)
+      if (pendingOutputBytesRef.current > maxPending) {
+        trimOutputQueue(maxPending)
         if (!backpressureNotifiedRef.current) {
           backpressureNotifiedRef.current = true
-          pendingOutputRef.current = `\r\n\x1b[33m[终端输出过快，已裁剪旧输出以保持工作区终端稳定]\x1b[0m\r\n` + pendingOutputRef.current
+          const message = `\r\n\x1b[33m[终端输出过快，已裁剪旧输出以保持工作区终端稳定]\x1b[0m\r\n`
+          pendingOutputChunksRef.current.unshift(message)
+          pendingOutputBytesRef.current += message.length
         }
       }
 
+      if (term.buffer.active.viewportY !== term.buffer.active.baseY) {
+        return
+      }
       if (isActiveRef.current && outputRafRef.current === null) {
         outputRafRef.current = requestAnimationFrame(flushOutput)
       }
     }
+    const removeScrollListener = term.onScroll(() => {
+      if (term.buffer.active.viewportY === term.buffer.active.baseY && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
+        outputRafRef.current = requestAnimationFrame(flushOutput)
+      }
+    })
 
     term.onData((data) => {
       if (detectHeavyCliCommand(data)) {
@@ -651,12 +736,16 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       ro.disconnect()
       clearTimeout(debounceTimer)
       if (outputRafRef.current !== null) cancelAnimationFrame(outputRafRef.current)
-      pendingOutputRef.current = ''
+      pendingOutputChunksRef.current = []
+      pendingOutputBytesRef.current = 0
       rendererDisposeRef.current?.()
       rendererDisposeRef.current = null
       osc52DisposeRef.current?.()
       osc52DisposeRef.current = null
       fitAddonRef.current = null
+      const textarea = term.textarea as (HTMLTextAreaElement & { __nutshellCompositionCleanup?: () => void }) | undefined
+      textarea?.__nutshellCompositionCleanup?.()
+      removeScrollListener.dispose()
       currentContainer.removeEventListener('paste', handlePasteEvent, true)
       currentContainer.removeEventListener('contextmenu', handleContextMenu, true)
       term.dispose()
@@ -672,6 +761,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       term.options.fontFamily = fontFamily
       term.options.scrollback = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).scrollback
       term.options.convertEol = !aiCompatibilityMode
+      term.options.smoothScrollDuration = 0
       term.options.customGlyphs = true
       term.options.rescaleOverlappingGlyphs = true
       term.options.minimumContrastRatio = 1

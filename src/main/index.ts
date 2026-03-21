@@ -11,9 +11,11 @@ import { registerAIHandlers } from './ipc/aiHandlers'
 import { registerWorkspaceHandlers } from './ipc/workspaceHandlers'
 import { registerLspHandlers } from './ipc/lspHandlers'
 import { registerSystemHandlers } from './ipc/systemHandlers'
+import { registerRustCoreHandlers } from './ipc/rustCoreHandlers'
 import { sshManager } from './ssh/SSHManager'
 import { serverMonitor } from './monitor/ServerMonitor'
 import { configStore } from './store/ConfigStore'
+import { rustCoreService } from './rust/RustCoreService'
 
 // Prevent uncaught exceptions from crashing the app (e.g., ssh2 socket errors)
 process.on('uncaughtException', (err) => {
@@ -125,6 +127,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   try {
     serverMonitor.stopAll()
     await sshManager.disconnectAll()
+    await rustCoreService.stop()
   } catch {
     // Ignore cleanup errors on exit
   }
@@ -148,6 +151,11 @@ app.whenReady().then(() => {
   registerWorkspaceHandlers()
   registerLspHandlers()
   registerSystemHandlers()
+  registerRustCoreHandlers()
+
+  rustCoreService.start().catch((error) => {
+    console.error('[rust-core] failed to start', error)
+  })
 
   createWindow()
 
