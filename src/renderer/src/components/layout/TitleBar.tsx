@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Minus, Square, X, Copy, Terminal, Monitor, ChevronDown } from 'lucide-react'
+import { Minus, Square, X, Copy, Terminal, Monitor, ChevronDown, Maximize2, Minimize2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { useConnectionStore } from '../../stores/connectionStore'
 
 const sizePresets = [
   { label: '1024 x 768', w: 1024, h: 768 },
@@ -12,6 +13,7 @@ const sizePresets = [
 export function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false)
   const [showSizeMenu, setShowSizeMenu] = useState(false)
+  const zenMode = useConnectionStore((state) => state.zenMode)
 
   useEffect(() => {
     const checkMaximized = async () => {
@@ -34,6 +36,10 @@ export function TitleBar() {
     setShowSizeMenu(false)
   }
 
+  const toggleZenMode = () => {
+    window.dispatchEvent(new CustomEvent('app:toggleZenMode'))
+  }
+
   return (
     <>
       <div className="flex items-center h-9 bg-card border-b border-border drag-region shrink-0 titlebar-gradient">
@@ -52,6 +58,23 @@ export function TitleBar() {
           >
             <Monitor className="w-3 h-3" />
             <ChevronDown className="w-3 h-3" />
+          </button>
+        </div>
+
+        {/* Zen mode toggle */}
+        <div className="no-drag">
+          <button
+            onClick={toggleZenMode}
+            className={cn(
+              'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors',
+              zenMode
+                ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+            )}
+            title={zenMode ? '退出专注模式 (F11)' : '专注模式 (F11)'}
+          >
+            {zenMode ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+            <span className="hidden sm:inline">{zenMode ? '退出专注' : '专注'}</span>
           </button>
         </div>
 

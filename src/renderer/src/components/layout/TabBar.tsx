@@ -8,7 +8,9 @@ import {
   ArrowRightLeft,
   Code2,
   FileText,
-  Plus
+  Plus,
+  RotateCcw,
+  Maximize2
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useConnectionStore, type Tab } from '../../stores/connectionStore'
@@ -46,8 +48,23 @@ export function TabBar() {
     bottom: number | 'auto'
     tab: Tab
   } | null>(null)
-  const [workspaceDialog, setWorkspaceDialog] = useState<{ tab: Tab } | null>(null)
-  const [workspacePath, setWorkspacePath] = useState('/root')
+  const reconnectTab = async (tab: Tab) => {
+    const conn = connections.find((c) => c.id === tab.connectionId)
+    if (!conn) {
+      setContextMenu(null)
+      return
+    }
+
+    try {
+      await window.api.ssh.disconnect(tab.sessionId).catch(() => {})
+    } catch {
+      // ignore disconnect failures
+    }
+
+    removeTab(tab.id)
+    window.dispatchEvent(new CustomEvent('connection:open', { detail: conn }))
+    setContextMenu(null)
+  }
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation()
@@ -167,18 +184,14 @@ export function TabBar() {
               <Container className="w-3.5 h-3.5" />
               打开 Docker 管理
             </button>
+            <div className="border-t border-border my-1" />
             <button
-              onClick={() => {
-                setWorkspaceDialog({ tab: contextMenu.tab })
-                setWorkspacePath('/root')
-                setContextMenu(null)
-              }}
+              onClick={() => reconnectTab(contextMenu.tab)}
               className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-accent transition-colors"
             >
-              <Code2 className="w-3.5 h-3.5" />
-              打开开发工作区
+              <RotateCcw className="w-3.5 h-3.5" />
+              重新连接
             </button>
-            <div className="border-t border-border my-1" />
             <button
               onClick={handleOpenPortForward}
               className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-accent transition-colors"
@@ -186,6 +199,19 @@ export function TabBar() {
               <ArrowRightLeft className="w-3.5 h-3.5" />
               端口转发
             </button>
+            {contextMenu.tab.type === 'terminal' && (
+              <button
+                onClick={() => {
+                  setContextMenu(null)
+                  window.dispatchEvent(new CustomEvent('app:toggleZenMode'))
+                }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                专注模式
+                <span className="ml-auto text-[10px] text-muted-foreground">F11</span>
+              </button>
+            )}
             <div className="border-t border-border my-1" />
             <button
               onClick={() => {
@@ -204,91 +230,6 @@ export function TabBar() {
         </>
       )}
 
-      {/* Workspace directory browser dialog */}
-      {workspaceDialog && <DirBrowserDialog
-        sessionId={workspaceDialog.tab.sessionId}
-        onSelect={(path) => {
-          const conn = connections.find((c) => c.id === workspaceDialog.tab.connectionId)
-          addTab({
-            id: uuidv4(), connectionId: workspaceDialog.tab.connectionId, sessionId: workspaceDialog.tab.sessionId,
-            name: `${conn?.name || 'Dev'} - ${path.split('/').pop()}`, type: 'workspace', connected: true, workspacePath: path
-          })
-          setWorkspaceDialog(null)
-        }}
-        onClose={() => setWorkspaceDialog(null)}
-      />}
-    </>
-  )
-}
-
-// Remote directory browser component
-function DirBrowserDialog({ sessionId, onSelect, onClose }: { sessionId: string; onSelect: (path: string) => void; onClose: () => void }) {
-  const [currentPath, setCurrentPath] = useState('/')
-  const [entries, setEntries] = useState<Array<{ name: string; path: string; isDirectory: boolean }>>([])
-  const [loading, setLoading] = useState(false)
-  const [manualPath, setManualPath] = useState('')
-
-  const loadDir = async (dirPath: string) => {
-    setLoading(true)
-    try {
-      const r = await window.api.workspace.listDirectory(sessionId, dirPath)
-      if (r.success) {
-        setEntries(r.entries.filter((e: any) => e.isDirectory))
-        setCurrentPath(dirPath)
-        setManualPath(dirPath)
-      }
-    } catch { }
-    setLoading(false)
-  }
-
-  useState(() => { loadDir('/') })
-
-  const goUp = () => {
-    if (currentPath === '/') return
-    const parent = currentPath.split('/').slice(0, -1).join('/') || '/'
-    loadDir(parent)
-  }
-
-  return (
-    <>
-      <div className="fixed inset-0 z-50 bg-black/50 dialog-overlay" onClick={onClose} />
-      <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl shadow-2xl w-[500px] dialog-content flex flex-col" style={{ height: '60vh' }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-          <h3 className="text-sm font-semibold">选择项目目录</h3>
-          <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
-        </div>
-        {/* Path input */}
-        <div className="flex items-center gap-2 px-5 py-2 border-b border-border shrink-0">
-          <button onClick={goUp} className="p-1 hover:bg-accent rounded shrink-0"><ArrowRightLeft className="w-3.5 h-3.5" /></button>
-          <input type="text" value={manualPath} onChange={(e) => setManualPath(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') loadDir(manualPath) }}
-            className="flex-1 px-2 py-1 bg-background border border-input rounded text-xs outline-none font-mono" />
-          <button onClick={() => loadDir(manualPath)} className="px-2 py-1 bg-secondary rounded text-xs hover:bg-secondary/80">跳转</button>
-        </div>
-        {/* Directory list */}
-        <div className="flex-1 overflow-y-auto px-2 py-1">
-          {loading ? <div className="flex items-center justify-center h-full"><span className="text-xs text-muted-foreground">加载中...</span></div> :
-            entries.length === 0 ? <div className="flex items-center justify-center h-full"><span className="text-xs text-muted-foreground">无子目录</span></div> :
-              entries.map((e) => (
-                <button key={e.path} onDoubleClick={() => loadDir(e.path)} onClick={() => setManualPath(e.path)}
-                  className={cn('flex items-center gap-2 w-full px-3 py-1.5 rounded text-xs hover:bg-accent/50 transition-colors',
-                    manualPath === e.path && 'bg-accent')}>
-                  <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                  <span className="truncate">{e.name}</span>
-                </button>
-              ))
-          }
-        </div>
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-border shrink-0">
-          <span className="text-xs text-muted-foreground font-mono truncate max-w-[250px]">{manualPath}</span>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm hover:bg-accent rounded-lg">取消</button>
-            <button onClick={() => onSelect(manualPath || currentPath)} disabled={!manualPath}
-              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg disabled:opacity-50 hover:bg-primary/90">打开</button>
-          </div>
-        </div>
-      </div>
     </>
   )
 }

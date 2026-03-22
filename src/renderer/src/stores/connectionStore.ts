@@ -38,6 +38,7 @@ interface ConnectionState {
   bottomPanelVisible: boolean
   bottomPanelHeight: number
   bottomPanelActiveTab: 'files' | 'commands' | 'transfers' | 'ports'
+  zenMode: boolean
 
   // Actions
   setConnections: (connections: ConnectionConfig[]) => void
@@ -55,6 +56,7 @@ interface ConnectionState {
   setBottomPanelVisible: (visible: boolean) => void
   setBottomPanelHeight: (height: number) => void
   setBottomPanelActiveTab: (tab: 'files' | 'commands' | 'transfers' | 'ports') => void
+  setZenMode: (zen: boolean) => void
 }
 
 export const useConnectionStore = create<ConnectionState>((set) => ({
@@ -66,6 +68,7 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   bottomPanelVisible: true,
   bottomPanelHeight: 350,
   bottomPanelActiveTab: 'commands',
+  zenMode: false,
 
   setConnections: (connections) => set({ connections }),
 
@@ -111,5 +114,6 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
   setMonitorPanelVisible: (visible) => set({ monitorPanelVisible: visible }),
   setBottomPanelVisible: (visible) => set({ bottomPanelVisible: visible }),
   setBottomPanelHeight: (height) => set({ bottomPanelHeight: height }),
-  setBottomPanelActiveTab: (tab) => set({ bottomPanelActiveTab: tab })
+  setBottomPanelActiveTab: (tab) => set({ bottomPanelActiveTab: tab }),
+  setZenMode: (zen) => set({ zenMode: zen })
 }))

@@ -6,6 +6,7 @@ import { StatusBar } from './components/layout/StatusBar'
 import { ContentArea } from './components/layout/ContentArea'
 import { Suspense, lazy } from 'react'
 import { ResizableDivider } from './components/layout/ResizableDivider'
+import { Maximize2, Minimize2 } from 'lucide-react'
 
 const ConnectionDialog = lazy(() => import('./components/connection/ConnectionDialog').then(m => ({ default: m.ConnectionDialog })))
 const SnippetManager = lazy(() => import('./components/snippet/SnippetManager').then(m => ({ default: m.SnippetManager })))
@@ -39,6 +40,9 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false)
   const [showScriptWorkshop, setShowScriptWorkshop] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const zenMode = useConnectionStore((state) => state.zenMode)
+  const setZenMode = useConnectionStore((state) => state.setZenMode)
+  const [zenHintVisible, setZenHintVisible] = useState(false)
 
   const handleSidebarResize = useCallback(
     (delta: number) => {
@@ -63,6 +67,33 @@ function AppContent() {
     document.addEventListener('drop', prevent)
     return () => { document.removeEventListener('dragover', prevent); document.removeEventListener('drop', prevent) }
   }, [])
+
+  // Zen mode keyboard shortcut (F11) and custom event
+  useEffect(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault()
+        const next = !useConnectionStore.getState().zenMode
+        setZenMode(next)
+        if (next) { setZenHintVisible(true); setTimeout(() => setZenHintVisible(false), 3000) }
+      }
+      // Escape exits zen mode
+      if (e.key === 'Escape' && useConnectionStore.getState().zenMode) {
+        setZenMode(false)
+      }
+    }
+    const handleToggleZen = () => {
+      const next = !useConnectionStore.getState().zenMode
+      setZenMode(next)
+      if (next) { setZenHintVisible(true); setTimeout(() => setZenHintVisible(false), 3000) }
+    }
+    document.addEventListener('keydown', handleKeydown)
+    window.addEventListener('app:toggleZenMode', handleToggleZen)
+    return () => {
+      document.removeEventListener('keydown', handleKeydown)
+      window.removeEventListener('app:toggleZenMode', handleToggleZen)
+    }
+  }, [setZenMode])
 
   // Global transfer progress listener — throttled to avoid UI stutter
   useEffect(() => {
@@ -338,21 +369,21 @@ function AppContent() {
     <div className="flex flex-col h-screen bg-background layout-no-select">
       <TitleBar />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <ResizableDivider direction="vertical" onResize={handleSidebarResize} onResizeEnd={handleSidebarResizeEnd} />
-        {activeTab && monitorPanelVisible && (
+        {!zenMode && <Sidebar />}
+        {!zenMode && <ResizableDivider direction="vertical" onResize={handleSidebarResize} onResizeEnd={handleSidebarResizeEnd} />}
+        {!zenMode && activeTab && monitorPanelVisible && (
           <Suspense fallback={null}>
             <MonitorPanel key={activeTab.sessionId} sessionId={activeTab.sessionId} />
           </Suspense>
         )}
         <div className="flex flex-col flex-1 overflow-hidden">
-          <TabBar />
+          {!zenMode && <TabBar />}
           <div className="flex flex-col flex-1 overflow-hidden">
             <ContentArea />
-            {activeTab && bottomPanelVisible && (
+            {!zenMode && activeTab && bottomPanelVisible && (
               <ResizableDivider direction="horizontal" onResize={handleBottomPanelResize} />
             )}
-            {activeTab && (
+            {!zenMode && activeTab && (
               <Suspense fallback={null}>
                 <BottomPanel
                   sessionId={activeTab.sessionId}
@@ -365,7 +396,27 @@ function AppContent() {
           </div>
         </div>
       </div>
-      <StatusBar />
+      {!zenMode && <StatusBar />}
+
+      {/* Zen mode floating hint */}
+      {zenMode && zenHintVisible && (
+        <div className="fixed top-1 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 bg-card/90 backdrop-blur-sm px-4 py-1.5 rounded-full border border-border/50 shadow-lg text-xs text-muted-foreground transition-opacity duration-500 animate-in fade-in">
+          <Maximize2 className="w-3 h-3" />
+          <span>专注模式 · 按 <kbd className="px-1.5 py-0.5 bg-secondary rounded text-[10px] font-mono">Esc</kbd> 或 <kbd className="px-1.5 py-0.5 bg-secondary rounded text-[10px] font-mono">F11</kbd> 退出</span>
+        </div>
+      )}
+
+      {/* Zen mode exit button (always visible, bottom-right corner) */}
+      {zenMode && (
+        <button
+          onClick={() => setZenMode(false)}
+          className="fixed bottom-3 right-3 z-[200] p-2 bg-card/80 backdrop-blur-sm border border-border/50 rounded-lg shadow-lg text-muted-foreground hover:text-foreground hover:bg-card transition-all opacity-30 hover:opacity-100"
+          title="退出专注模式 (Esc / F11)"
+        >
+          <Minimize2 className="w-4 h-4" />
+        </button>
+      )}
+
       <Suspense fallback={null}>
         <ConnectionDialog />
         {showSnippets && (
