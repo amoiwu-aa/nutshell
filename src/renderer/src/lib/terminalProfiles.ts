@@ -26,7 +26,7 @@ export function getTerminalInteractionProfileConfig(
       chunkSize: 8192,
       maxPendingBytes: 4 * 1024 * 1024,
       maxPendingWhenHidden: 1024 * 1024,
-      rendererMode: 'canvas'
+      rendererMode: null
     }
   }
 

@@ -81,6 +81,18 @@ function AppContent() {
       if (e.key === 'Escape' && useConnectionStore.getState().zenMode) {
         setZenMode(false)
       }
+      // Ctrl+Tab / Ctrl+Shift+Tab cycles tabs (works in any mode but especially useful in zen)
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault()
+        const store = useConnectionStore.getState()
+        const { tabs: allTabs, activeTabId: currentId } = store
+        if (allTabs.length <= 1) return
+        const idx = allTabs.findIndex((t) => t.id === currentId)
+        const nextIdx = e.shiftKey
+          ? (idx - 1 + allTabs.length) % allTabs.length
+          : (idx + 1) % allTabs.length
+        store.setActiveTab(allTabs[nextIdx].id)
+      }
     }
     const handleToggleZen = () => {
       const next = !useConnectionStore.getState().zenMode
@@ -397,24 +409,53 @@ function AppContent() {
         </div>
       </div>
       {!zenMode && <StatusBar />}
-
-      {/* Zen mode floating hint */}
-      {zenMode && zenHintVisible && (
-        <div className="fixed top-1 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 bg-card/90 backdrop-blur-sm px-4 py-1.5 rounded-full border border-border/50 shadow-lg text-xs text-muted-foreground transition-opacity duration-500 animate-in fade-in">
-          <Maximize2 className="w-3 h-3" />
-          <span>专注模式 · 按 <kbd className="px-1.5 py-0.5 bg-secondary rounded text-[10px] font-mono">Esc</kbd> 或 <kbd className="px-1.5 py-0.5 bg-secondary rounded text-[10px] font-mono">F11</kbd> 退出</span>
+      {/* Zen mode: mini tab bar + controls (hover to reveal at top) */}
+      {zenMode && tabs.length > 0 && (
+        <div
+          className="fixed top-9 left-0 right-0 z-[200] flex items-center justify-center"
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            className="flex items-center gap-1 bg-card/95 backdrop-blur-md px-2 py-1 rounded-b-xl border border-t-0 border-border/40 shadow-xl transition-all duration-200 opacity-0 hover:opacity-100"
+            style={{ pointerEvents: 'auto' }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '0'}
+          >
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTabId
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => useConnectionStore.getState().setActiveTab(tab.id)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all truncate max-w-[140px] ${
+                    isActive
+                      ? 'bg-primary/15 text-primary border border-primary/25 shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  }`}
+                  title={tab.name}
+                >
+                  {tab.name}
+                </button>
+              )
+            })}
+            <div className="w-px h-4 bg-border/40 mx-1" />
+            <button
+              onClick={() => setZenMode(false)}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              title="退出专注模式 (Esc)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Zen mode exit button (always visible, bottom-right corner) */}
-      {zenMode && (
-        <button
-          onClick={() => setZenMode(false)}
-          className="fixed bottom-3 right-3 z-[200] p-2 bg-card/80 backdrop-blur-sm border border-border/50 rounded-lg shadow-lg text-muted-foreground hover:text-foreground hover:bg-card transition-all opacity-30 hover:opacity-100"
-          title="退出专注模式 (Esc / F11)"
-        >
-          <Minimize2 className="w-4 h-4" />
-        </button>
+      {/* Zen mode floating hint (auto-dismiss) */}
+      {zenMode && zenHintVisible && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] flex items-center gap-2 bg-card/90 backdrop-blur-sm px-4 py-1.5 rounded-full border border-border/50 shadow-lg text-xs text-muted-foreground animate-in fade-in">
+          <Maximize2 className="w-3 h-3" />
+          <span>专注模式 · 顶部悬停切换标签 · <kbd className="px-1.5 py-0.5 bg-secondary rounded text-[10px] font-mono">Esc</kbd> 退出</span>
+        </div>
       )}
 
       <Suspense fallback={null}>
