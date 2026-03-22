@@ -16,6 +16,7 @@ import {
 } from '../../lib/terminalRendering'
 import {
   detectHeavyCliCommand,
+  detectHeavyCliOutput,
   getTerminalInteractionProfileConfig,
   resolveRendererModeForProfile,
   type TerminalInteractionProfile
@@ -122,19 +123,10 @@ function dequeueOutputChunk(queue: string[], totalRef: { current: number }, maxB
   return output
 }
 
-function trimOutputQueue(queue: string[], totalRef: { current: number }, maxBytes: number): void {
-  while (totalRef.current > maxBytes && queue.length > 0) {
-    const head = queue[0]
-    const overflow = totalRef.current - maxBytes
-    if (head.length <= overflow) {
-      totalRef.current -= head.length
-      queue.shift()
-    } else {
-      queue[0] = head.slice(overflow)
-      totalRef.current -= overflow
-      break
-    }
-  }
+
+
+function stripAnsiResyncPrefix(data: string): string {
+  return data.replace(/^(?:(?:\x1b\[[0-9:;?]*[ -/]*[@-~])|(?:\[[0-9:;?]*[ -/]*[@-~])|(?:[;:0-9?]+[A-Za-z]))+/, '')
 }
 
 // Single terminal instance component
@@ -168,6 +160,7 @@ function TerminalInstance({
   const osc52DisposeRef = useRef<(() => void) | null>(null)
   const [effectiveRenderer, setEffectiveRenderer] = useState<'dom' | 'webgl' | 'canvas'>('dom')
   const backpressureNotifiedRef = useRef(false)
+  const ansiResyncPendingRef = useRef(false)
   const interactionProfileRef = useRef<TerminalInteractionProfile>('default')
   const frozenThemeRef = useRef<{ terminalThemeId: string; useGlass: boolean } | null>(null)
   const selectedTerminalTheme = useSettingsStore((state) => state.settings.terminalTheme)
@@ -197,36 +190,14 @@ function TerminalInstance({
 
   useEffect(() => {
     isActiveRef.current = isActive
-    if (!isActive) {
-      if (outputRafRef.current !== null) {
-        cancelAnimationFrame(outputRafRef.current)
-        outputRafRef.current = null
-      }
-      return
-    }
-    if (terminalRef.current && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
-      outputRafRef.current = requestAnimationFrame(() => {
-        outputRafRef.current = null
-        if (!terminalRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
-        const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-        const chunk = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, profile.chunkSize)
-        if (!chunk) return
-        terminalRef.current.write(chunk)
-        if (pendingOutputChunksRef.current.length > 0) {
-          outputRafRef.current = requestAnimationFrame(() => {
-            outputRafRef.current = null
-            if (!terminalRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
-            const rest = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, Number.MAX_SAFE_INTEGER)
-            if (rest) terminalRef.current.write(rest)
-          })
-        }
-      })
-    }
-  }, [isActive, aiCompatibilityMode])
+    // flushBufferedOutput gracefully switches between RAF (active) and setTimeout (inactive).
+    // No need to cancel or artificially flush anything here.
+  }, [isActive])
 
   useEffect(() => {
     if (!containerRef.current) return
 
+    let isDisposed = false
     const { termTheme } = resolveTerminalVisualState(selectedTerminalTheme, colorTheme, frozenThemeRef.current)
 
     const terminal = new Terminal({
@@ -401,50 +372,71 @@ function TerminalInstance({
     }
     containerRef.current.addEventListener('paste', handlePasteEvent, true)
 
+    const MAX_WRITE_PER_FRAME = 32768 // 32KB hard cap per write to keep scroll & UI responsive
+
     const flushBufferedOutput = () => {
       outputRafRef.current = null
-      if (pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
+      if (isDisposed || pendingOutputChunksRef.current.length === 0) return
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-      const chunk = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, profile.chunkSize)
+      
+      // Dynamic chunk size that scales with backlog, but never exceeds 32KB per frame
+      // This keeps xterm.js parser work per frame bounded so scroll events can fire between frames
+      const dynamicChunkSize = Math.min(
+        MAX_WRITE_PER_FRAME,
+        Math.max(profile.chunkSize, Math.floor(pendingOutputBytesRef.current / 8))
+      )
+      const chunk = dequeueOutputChunk(pendingOutputChunksRef.current, pendingOutputBytesRef, dynamicChunkSize)
+      
       if (!chunk) return
       terminal.write(chunk)
 
       if (pendingOutputChunksRef.current.length > 0) {
-        outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
+        // Always use setTimeout for heavy-cli to give browser time for scroll/input events
+        // Use RAF for default mode when active for smoother rendering
+        if (interactionProfileRef.current === 'heavy-cli' || !isActiveRef.current) {
+          outputRafRef.current = window.setTimeout(flushBufferedOutput, 4) as any
+        } else {
+          outputRafRef.current = requestAnimationFrame(flushBufferedOutput) as any
+        }
       } else {
         backpressureNotifiedRef.current = false
       }
     }
 
     const queueOutput = (data: string) => {
+      if (interactionProfileRef.current === 'heavy-cli' && ansiResyncPendingRef.current) {
+        const sanitized = stripAnsiResyncPrefix(data)
+        if (!sanitized) return
+        data = sanitized
+        ansiResyncPendingRef.current = false
+      }
+
       pendingOutputChunksRef.current.push(data)
       pendingOutputBytesRef.current += data.length
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
       const maxPending = isActiveRef.current ? profile.maxPendingBytes : profile.maxPendingWhenHidden
-      if (pendingOutputBytesRef.current > maxPending) {
-        trimOutputQueue(pendingOutputChunksRef.current, pendingOutputBytesRef, maxPending)
-        if (!backpressureNotifiedRef.current) {
-          backpressureNotifiedRef.current = true
-          const message = `\r\n\x1b[33m[终端输出过快，已保留最近 ${Math.round(maxPending / 1024)}KB 数据以保持界面稳定]\x1b[0m\r\n`
-          pendingOutputChunksRef.current.unshift(message)
-          pendingOutputBytesRef.current += message.length
-        }
+      
+      if (pendingOutputBytesRef.current > maxPending && !backpressureNotifiedRef.current) {
+        backpressureNotifiedRef.current = true
+        // Instead of destructive trimming which corrupts ANSI sequences, we just notify and let dynamic chunking handle it
+        const message = `\r\n\x1b[33m[终端输出量巨大，正加速渲染以保持同步...]\x1b[0m\r\n`
+        pendingOutputChunksRef.current.unshift(message)
+        pendingOutputBytesRef.current += message.length
       }
 
-      if (terminal.buffer.active.viewportY !== terminal.buffer.active.baseY) {
-        return
-      }
-      if (isActiveRef.current && outputRafRef.current === null) {
-        outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
+      if (outputRafRef.current === null) {
+        if (isActiveRef.current) {
+          outputRafRef.current = requestAnimationFrame(flushBufferedOutput) as any
+        } else {
+          outputRafRef.current = window.setTimeout(flushBufferedOutput, 16) as any
+        }
       }
     }
 
     const removeScrollListener = terminal.onScroll(() => {
-      if (terminal.buffer.active.viewportY === terminal.buffer.active.baseY && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
-        outputRafRef.current = requestAnimationFrame(flushBufferedOutput)
-      }
+      // Intentionally left blank. Handling scroll doesn't block RAF anymore.
     })
 
     terminal.onData((data) => {
@@ -459,13 +451,19 @@ function TerminalInstance({
       if (cols !== lastCols || rows !== lastRows) { lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows) }
     })
 
-    const removeDataListener = window.api.ssh.onData((sid, data) => { if (sid === sessionId) queueOutput(data) })
+    const removeDataListener = window.api.ssh.onData((sid, data) => {
+      if (sid === sessionId) {
+        if (interactionProfileRef.current !== 'heavy-cli' && detectHeavyCliOutput(data)) {
+          switchInteractionProfile('heavy-cli')
+        }
+        queueOutput(data)
+      }
+    })
     const removeCloseListener = window.api.ssh.onClose((sid) => { if (sid === sessionId) queueOutput('\r\n\x1b[31m[连接已断开]\x1b[0m\r\n') })
     const removeErrorListener = window.api.ssh.onError((sid, error) => { if (sid === sessionId) queueOutput(`\r\n\x1b[31m[错误: ${error}]\x1b[0m\r\n`) })
     const removeReconnectingListener = window.api.ssh.onReconnecting?.((sid, attempt) => { if (sid === sessionId) queueOutput(`\r\n\x1b[33m[正在重连... 第 ${attempt} 次尝试]\x1b[0m\r\n`) })
     const removeReconnectedListener = window.api.ssh.onReconnected?.((sid) => { if (sid === sessionId) queueOutput('\r\n\x1b[32m[重连成功]\x1b[0m\r\n') })
 
-    let isDisposed = false
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
     const resizeObserver = new ResizeObserver(() => {
       if (isDisposed) return
@@ -506,6 +504,7 @@ function TerminalInstance({
       if (resizeTimer) clearTimeout(resizeTimer)
       if (outputRafRef.current !== null) {
         cancelAnimationFrame(outputRafRef.current)
+        clearTimeout(outputRafRef.current)
         outputRafRef.current = null
       }
       rendererDisposeRef.current?.()
@@ -516,6 +515,7 @@ function TerminalInstance({
       textarea?.__nutshellCompositionCleanup?.()
       pendingOutputChunksRef.current = []
       pendingOutputBytesRef.current = 0
+      ansiResyncPendingRef.current = false
       onTerminalRefRef.current?.(null)
       removeDataListener(); removeCloseListener(); removeErrorListener()
       removeReconnectingListener?.(); removeReconnectedListener?.()
@@ -524,7 +524,8 @@ function TerminalInstance({
       try { terminal.dispose() } catch { }
       terminalRef.current = null
     }
-  }, [sessionId, aiCompatibilityMode, terminalRenderer, pasteToTerminal, writeClipboardText, allowRemoteClipboardWrite, colorTheme])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally mount/unmount only on sessionId change; settings are applied live by the effect below
+  }, [sessionId])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -681,18 +682,25 @@ export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: T
     return new Promise((resolve) => {
       let output = ''
       let timer: ReturnType<typeof setTimeout>
+      let fallbackTimer: ReturnType<typeof setTimeout>
+      let resolved = false
+
+      const finish = (fallback?: boolean) => {
+        if (resolved) return
+        resolved = true
+        removeListener()
+        if (timer) clearTimeout(timer)
+        if (fallbackTimer) clearTimeout(fallbackTimer)
+        const clean = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '')
+        resolve(clean || (fallback ? '(无输出)' : clean))
+      }
 
       const removeListener = window.api.ssh.onData((sid, data) => {
-        if (sid === sessionId) {
+        if (sid === sessionId && !resolved) {
           output += data
           // Reset timer on each new data chunk (wait for output to settle)
           if (timer) clearTimeout(timer)
-          timer = setTimeout(() => {
-            removeListener()
-            // Strip ANSI escape codes for cleaner AI input
-            const clean = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '')
-            resolve(clean)
-          }, 2000) // 2 second settle time
+          timer = setTimeout(() => finish(), 2000) // 2 second settle time
         }
       })
 
@@ -700,12 +708,7 @@ export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: T
       window.api.ssh.write(sessionId, command + '\n')
 
       // Absolute timeout fallback (8 seconds)
-      setTimeout(() => {
-        removeListener()
-        if (timer) clearTimeout(timer)
-        const clean = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\r/g, '')
-        resolve(clean || '(无输出)')
-      }, 8000)
+      fallbackTimer = setTimeout(() => finish(true), 8000)
     })
   }, [sessionId])
 

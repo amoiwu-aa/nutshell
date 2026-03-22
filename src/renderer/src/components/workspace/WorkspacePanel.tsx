@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Sparkles, Terminal, GitBranch, Search, AlertCircle, AlertTriangle,
-  List, X, Loader2, Server, FileCode, GitCompare
+  List, X, FileCode, GitCompare
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { FileTree } from './FileTree'
@@ -15,10 +15,6 @@ import { Terminal as XTerminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
-import {
-  registerLspProviders, disposeAllProviders,
-  notifyFileOpen, notifyFileChange, notifyFileClose, notifyFileSave
-} from '../../lib/LspProviderBridge'
 import type * as monacoType from 'monaco-editor'
 import { useSettingsStore } from '../../stores/settingsStore'
 import {
@@ -27,6 +23,7 @@ import {
 } from '../../lib/terminalRendering'
 import {
   detectHeavyCliCommand,
+  detectHeavyCliOutput,
   getTerminalInteractionProfileConfig,
   resolveRendererModeForProfile,
   type TerminalInteractionProfile
@@ -60,10 +57,6 @@ interface WorkspacePanelProps { sessionId: string; tabId: string; rootPath: stri
 type SidebarView = 'files' | 'search' | 'outline' | 'git'
 type BottomTab = 'terminal' | 'problems'
 
-interface LspServerInfo {
-  language: string; available: boolean; installHint: string; recommended: boolean; running: boolean; starting: boolean
-}
-
 export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: WorkspacePanelProps) {
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
@@ -74,6 +67,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
   const [showBottom, setShowBottom] = useState(true) // default open
   const [bottomTab, setBottomTab] = useState<BottomTab>('terminal')
   const [bottomHeight, setBottomHeight] = useState(220)
+  const [aiInputFocused, setAiInputFocused] = useState(false)
   const [gitBranch, setGitBranch] = useState('')
   const [gitChanges, setGitChanges] = useState<Map<string, string>>(new Map())
   const [cursorLine, setCursorLine] = useState(1)
@@ -82,7 +76,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
   const activeFileRef = useRef<string | null>(null)
   const diffFileRef = useRef<string | null>(null)
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null)
-  const [lspServers, setLspServers] = useState<LspServerInfo[]>([])
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([])
 
   useEffect(() => { openFilesRef.current = openFiles }, [openFiles])
@@ -106,53 +99,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
     loadGitStatus()
   }, [loadGitStatus, isActive])
 
-  // ===== LSP =====
-  useEffect(() => {
-    const detectLsp = async () => {
-      try {
-        const r = await window.api.lsp.detectServers(sessionId, rootPath)
-        if (r.success && r.servers) {
-          setLspServers(r.servers.map((s: any) => ({ ...s, running: false, starting: false })))
-          for (const s of r.servers) {
-            if (s.recommended && s.available) startLspServer(s.language)
-          }
-        }
-      } catch {}
-    }
-    detectLsp()
-
-    const removeDiag = window.api.lsp.onDiagnostics((sid: string, lang: string, params: any) => {
-      if (sid !== sessionId) return
-      const filePath = (params.uri || '').replace('file://', '')
-      const newDiags: Diagnostic[] = (params.diagnostics || []).map((d: any) => ({
-        file: filePath, line: (d.range?.start?.line || 0) + 1, column: (d.range?.start?.character || 0) + 1,
-        endLine: (d.range?.end?.line || 0) + 1, endColumn: (d.range?.end?.character || 0) + 1,
-        message: d.message || '', severity: d.severity === 1 ? 'error' : d.severity === 2 ? 'warning' : 'info',
-        source: d.source || `lsp:${lang}`,
-      }))
-      setDiagnostics((prev) => [...prev.filter((d) => d.file !== filePath || !d.source.startsWith('lsp:')), ...newDiags])
-    })
-    const removeStatus = window.api.lsp.onStatus((sid: string, lang: string, status: string) => {
-      if (sid !== sessionId) return
-      setLspServers((prev) => prev.map((s) => s.language === lang ? { ...s, running: status === 'running', starting: false } : s))
-    })
-    return () => { removeDiag(); removeStatus(); disposeAllProviders(); window.api.lsp.stopAll(sessionId).catch(() => {}) }
-  }, [sessionId, rootPath])
-
-  const startLspServer = useCallback(async (language: string) => {
-    setLspServers((prev) => prev.map((s) => s.language === language ? { ...s, starting: true } : s))
-    try {
-      const r = await window.api.lsp.start(sessionId, rootPath, language)
-      if (r.success) {
-        const langMap: Record<string, string[]> = { typescript: ['typescript', 'javascript'], python: ['python'], go: ['go'], rust: ['rust'], clangd: ['c', 'cpp'] }
-        for (const lid of (langMap[language] || [])) registerLspProviders({ sessionId, rootPath }, lid)
-        setLspServers((prev) => prev.map((s) => s.language === language ? { ...s, running: true, starting: false } : s))
-      } else {
-        setLspServers((prev) => prev.map((s) => s.language === language ? { ...s, starting: false } : s))
-      }
-    } catch { setLspServers((prev) => prev.map((s) => s.language === language ? { ...s, starting: false } : s)) }
-  }, [sessionId, rootPath])
-
   // ===== File ops =====
   const handleFileOpen = useCallback(async (filePath: string, line?: number) => {
     setDiffFile(null)
@@ -168,7 +114,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
     setActiveFile(filePath)
     try {
       const r = await window.api.sftp.readFile(sessionId, filePath)
-      if (r.success) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content: r.content, originalContent: r.content, loading: false } : f)); notifyFileOpen(sessionId, filePath, language, r.content) }
+      if (r.success) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content: r.content, originalContent: r.content, loading: false } : f)) }
       else setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content: `// Error: ${r.error}`, loading: false } : f))
     } catch (err: any) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content: `// Error: ${err.message}`, loading: false } : f)) }
     if (line) setTimeout(() => { editorRef.current?.revealLineInCenter(line); editorRef.current?.setPosition({ lineNumber: line, column: 1 }) }, 300)
@@ -178,24 +124,21 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
     const currentOpenFiles = openFilesRef.current
     const file = currentOpenFiles.find((f) => f.path === filePath)
     if (file?.modified && !confirm(`${file.name} 有未保存的更改，确定关闭？`)) return
-    if (file) notifyFileClose(sessionId, filePath, file.language)
     setOpenFiles((prev) => prev.filter((f) => f.path !== filePath))
     if (activeFileRef.current === filePath) { const remaining = currentOpenFiles.filter((f) => f.path !== filePath); setActiveFile(remaining.length > 0 ? remaining[remaining.length - 1].path : null) }
     if (diffFileRef.current === filePath) setDiffFile(null)
-  }, [sessionId])
+  }, [])
 
   const handleContentChange = useCallback((filePath: string, content: string) => {
     setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, content, modified: content !== f.originalContent } : f))
-    const file = openFilesRef.current.find((f) => f.path === filePath)
-    if (file) notifyFileChange(sessionId, filePath, file.language, content)
-  }, [sessionId])
+  }, [])
 
   const handleSave = useCallback(async (filePath: string) => {
     const file = openFilesRef.current.find((f) => f.path === filePath)
     if (!file) return
     try {
       const r = await window.api.sftp.writeFile(sessionId, filePath, file.content)
-      if (r.success) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, originalContent: f.content, modified: false } : f)); notifyFileSave(sessionId, filePath, file.language, file.content); loadGitStatus() }
+      if (r.success) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, originalContent: f.content, modified: false } : f)); loadGitStatus() }
     } catch {}
   }, [sessionId, loadGitStatus])
 
@@ -212,7 +155,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
   const currentFile = useMemo(() => openFiles.find((f) => f.path === activeFile) || null, [openFiles, activeFile])
   const errorCount = diagnostics.filter((d) => d.severity === 'error').length
   const warningCount = diagnostics.filter((d) => d.severity === 'warning').length
-  const runningLsp = lspServers.filter((s) => s.running).length
 
   // Resize
   const resizeRef = useRef<{ startY: number; startHeight: number } | null>(null)
@@ -264,11 +206,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
             <Sparkles className="w-[22px] h-[22px]" />
           </button>
 
-          <button title={`LSP: ${runningLsp} 运行中`}
-            className="w-[48px] h-[48px] flex items-center justify-center mb-1"
-            style={{ color: runningLsp > 0 ? C.success : '#858585' }}>
-            <Server className="w-[18px] h-[18px]" />
-          </button>
         </div>
 
         {/* === Sidebar === */}
@@ -285,24 +222,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
                   <div className="flex-1 overflow-y-auto">
                     <FileTree sessionId={sessionId} rootPath={rootPath} gitChanges={gitChanges} onFileOpen={(p) => handleFileOpen(p)} onRefresh={loadGitStatus} />
                   </div>
-                  {lspServers.filter((s) => s.recommended || s.available).length > 0 && (
-                    <div style={{ borderTop: `1px solid ${C.border}` }} className="shrink-0 py-1">
-                      <div className="px-4 py-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#bbbbbb' }}>语言服务器</div>
-                      {lspServers.filter((s) => s.recommended || s.available).map((s) => (
-                        <div key={s.language} className="flex items-center gap-2 px-4 py-1 text-[13px]" style={{ color: C.text }}>
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: s.running ? C.success : s.available ? '#858585' : C.error }} />
-                          <span className="capitalize">{s.language}</span>
-                          {!s.running && s.available && (
-                            <button onClick={() => startLspServer(s.language)} disabled={s.starting} className="ml-auto text-[12px] hover:underline" style={{ color: C.accent }}>
-                              {s.starting ? <Loader2 className="w-3 h-3 animate-spin" /> : '启动'}
-                            </button>
-                          )}
-                          {!s.available && <span className="ml-auto text-[11px]" style={{ color: '#858585' }} title={s.installHint}>未安装</span>}
-                          {s.running && <span className="ml-auto text-[11px]" style={{ color: C.success }}>运行中</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
               {sidebarView === 'search' && <SearchPanel sessionId={sessionId} rootPath={rootPath} onOpenFile={handleFileOpen} />}
@@ -356,7 +275,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
                   </button>
                 </div>
                 <div className="flex-1 overflow-hidden">
-                  {bottomTab === 'terminal' && <WorkspaceTerminal sessionId={sessionId} rootPath={rootPath} isActive={isActive && showBottom && bottomTab === 'terminal'} />}
+                  {bottomTab === 'terminal' && <WorkspaceTerminal sessionId={sessionId} rootPath={rootPath} isActive={isActive && showBottom && bottomTab === 'terminal'} aiInputFocused={aiInputFocused} />}
                   {bottomTab === 'problems' && <ProblemsPanel diagnostics={diagnostics} onOpenFile={handleFileOpen} />}
                 </div>
               </div>
@@ -370,6 +289,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
             currentFile={currentFile ? { path: currentFile.path, content: currentFile.content, language: currentFile.language } : null}
             onInsertCode={(code) => { if (currentFile) handleContentChange(currentFile.path, currentFile.content + '\n' + code) }}
             onExecuteCommand={handleExecuteCommand} onOpenFile={(p) => handleFileOpen(p)} onWriteFile={handleWriteFile}
+            onInputFocusChange={setAiInputFocused}
             onReviewDiff={(path, original, modified) => {
               const lang = detectLang(path.split('/').pop() || '')
               setDiffFile(null) // clear old diff
@@ -406,7 +326,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
           </button>
           <span>行 {cursorLine}, 列 {cursorCol}</span>
           {currentFile && <span className="capitalize">{currentFile.language}</span>}
-          {runningLsp > 0 && <span className="flex items-center gap-1"><Server className="w-3.5 h-3.5" /> LSP</span>}
           <span>UTF-8</span>
         </div>
       </div>
@@ -441,7 +360,7 @@ function GitChangesPanel({ sessionId, rootPath, gitChanges, onOpenFile, onOpenDi
 }
 
 // ===== Integrated Terminal =====
-function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: string; rootPath: string; isActive: boolean }) {
+function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = false }: { sessionId: string; rootPath: string; isActive: boolean; aiInputFocused?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -454,6 +373,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
   const outputRafRef = useRef<number | null>(null)
   const isComposingRef = useRef(false)
   const backpressureNotifiedRef = useRef(false)
+  const ansiResyncPendingRef = useRef(false)
   const interactionProfileRef = useRef<TerminalInteractionProfile>('default')
   const frozenThemeRef = useRef(false)
   const fontSize = useSettingsStore((state) => state.settings.fontSize)
@@ -486,19 +406,10 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
     return output
   }, [])
 
-  const trimOutputQueue = useCallback((maxBytes: number) => {
-    while (pendingOutputBytesRef.current > maxBytes && pendingOutputChunksRef.current.length > 0) {
-      const head = pendingOutputChunksRef.current[0]
-      const overflow = pendingOutputBytesRef.current - maxBytes
-      if (head.length <= overflow) {
-        pendingOutputBytesRef.current -= head.length
-        pendingOutputChunksRef.current.shift()
-      } else {
-        pendingOutputChunksRef.current[0] = head.slice(overflow)
-        pendingOutputBytesRef.current -= overflow
-        break
-      }
-    }
+
+
+  const stripAnsiResyncPrefix = useCallback((data: string) => {
+    return data.replace(/^(?:(?:\x1b\[[0-9:;?]*[ -/]*[@-~])|(?:\[[0-9:;?]*[ -/]*[@-~])|(?:[;:0-9?]+[A-Za-z]))+/, '')
   }, [])
 
   const pasteToTerminal = useCallback((text: string) => {
@@ -511,32 +422,8 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
 
   useEffect(() => {
     isActiveRef.current = isActive
-    if (!isActive) {
-      if (outputRafRef.current !== null) {
-        cancelAnimationFrame(outputRafRef.current)
-        outputRafRef.current = null
-      }
-      return
-    }
-    if (termRef.current && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
-      outputRafRef.current = requestAnimationFrame(() => {
-        outputRafRef.current = null
-        if (!termRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
-        const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-        const chunk = dequeueOutputChunk(profile.chunkSize)
-        if (!chunk) return
-        termRef.current.write(chunk)
-        if (pendingOutputChunksRef.current.length > 0) {
-          outputRafRef.current = requestAnimationFrame(() => {
-            outputRafRef.current = null
-            if (!termRef.current || pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
-            const rest = dequeueOutputChunk(Number.MAX_SAFE_INTEGER)
-            if (rest) termRef.current.write(rest)
-          })
-        }
-      })
-    }
-  }, [isActive, aiCompatibilityMode])
+    // flushOutput gracefully switches between RAF (active) and setTimeout (inactive).
+  }, [isActive])
 
   useEffect(() => {
     if (!containerRef.current || termRef.current) return
@@ -656,48 +543,63 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
     }
     currentContainer.addEventListener('paste', handlePasteEvent, true)
 
+    let isDisposed = false
+    const MAX_WRITE_PER_FRAME = 32768
+
     const flushOutput = () => {
       outputRafRef.current = null
-      if (pendingOutputChunksRef.current.length === 0 || !isActiveRef.current) return
+      if (isDisposed || pendingOutputChunksRef.current.length === 0) return
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
-      const chunk = dequeueOutputChunk(profile.chunkSize)
+      const dynamicChunkSize = Math.min(
+        MAX_WRITE_PER_FRAME,
+        Math.max(profile.chunkSize, Math.floor(pendingOutputBytesRef.current / 8))
+      )
+      const chunk = dequeueOutputChunk(dynamicChunkSize)
       if (!chunk) return
       term.write(chunk)
 
       if (pendingOutputChunksRef.current.length > 0) {
-        outputRafRef.current = requestAnimationFrame(flushOutput)
+        if (interactionProfileRef.current === 'heavy-cli' || !isActiveRef.current) {
+          outputRafRef.current = window.setTimeout(flushOutput, 4) as any
+        } else {
+          outputRafRef.current = requestAnimationFrame(flushOutput) as any
+        }
       } else {
         backpressureNotifiedRef.current = false
       }
     }
     const queueOutput = (data: string) => {
+      if (interactionProfileRef.current === 'heavy-cli' && ansiResyncPendingRef.current) {
+        const sanitized = stripAnsiResyncPrefix(data)
+        if (!sanitized) return
+        data = sanitized
+        ansiResyncPendingRef.current = false
+      }
+
       pendingOutputChunksRef.current.push(data)
       pendingOutputBytesRef.current += data.length
 
       const profile = getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode)
       const maxPending = isActiveRef.current ? profile.maxPendingBytes : profile.maxPendingWhenHidden
-      if (pendingOutputBytesRef.current > maxPending) {
-        trimOutputQueue(maxPending)
-        if (!backpressureNotifiedRef.current) {
-          backpressureNotifiedRef.current = true
-          const message = `\r\n\x1b[33m[终端输出过快，已裁剪旧输出以保持工作区终端稳定]\x1b[0m\r\n`
-          pendingOutputChunksRef.current.unshift(message)
-          pendingOutputBytesRef.current += message.length
-        }
+
+      if (pendingOutputBytesRef.current > maxPending && !backpressureNotifiedRef.current) {
+        backpressureNotifiedRef.current = true
+        const message = `\r\n\x1b[33m[终端输出量巨大，正加速渲染以保持同步...]\x1b[0m\r\n`
+        pendingOutputChunksRef.current.unshift(message)
+        pendingOutputBytesRef.current += message.length
       }
 
-      if (term.buffer.active.viewportY !== term.buffer.active.baseY) {
-        return
-      }
-      if (isActiveRef.current && outputRafRef.current === null) {
-        outputRafRef.current = requestAnimationFrame(flushOutput)
+      if (outputRafRef.current === null) {
+        if (isActiveRef.current) {
+          outputRafRef.current = requestAnimationFrame(flushOutput) as any
+        } else {
+          outputRafRef.current = window.setTimeout(flushOutput, 16) as any
+        }
       }
     }
     const removeScrollListener = term.onScroll(() => {
-      if (term.buffer.active.viewportY === term.buffer.active.baseY && pendingOutputChunksRef.current.length > 0 && outputRafRef.current === null) {
-        outputRafRef.current = requestAnimationFrame(flushOutput)
-      }
+      // Intentionally left blank. Scroll position no longer blocks rendering.
     })
 
     term.onData((data) => {
@@ -706,7 +608,14 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       }
       window.api.ssh.write(sessionId, data)
     })
-    const removeData = window.api.ssh.onData((sid: string, data: string) => { if (sid === sessionId) queueOutput(data) })
+    const removeData = window.api.ssh.onData((sid: string, data: string) => {
+      if (sid === sessionId) {
+        if (interactionProfileRef.current !== 'heavy-cli' && detectHeavyCliOutput(data)) {
+          switchInteractionProfile('heavy-cli')
+        }
+        queueOutput(data)
+      }
+    })
 
     if (!cdSentRef.current) {
       cdSentRef.current = true
@@ -732,12 +641,17 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
     }, 100)
 
     return () => {
+      isDisposed = true
       removeData()
       ro.disconnect()
       clearTimeout(debounceTimer)
-      if (outputRafRef.current !== null) cancelAnimationFrame(outputRafRef.current)
+      if (outputRafRef.current !== null) {
+        cancelAnimationFrame(outputRafRef.current)
+        clearTimeout(outputRafRef.current)
+      }
       pendingOutputChunksRef.current = []
       pendingOutputBytesRef.current = 0
+      ansiResyncPendingRef.current = false
       rendererDisposeRef.current?.()
       rendererDisposeRef.current = null
       osc52DisposeRef.current?.()
@@ -751,7 +665,8 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
       term.dispose()
       termRef.current = null
     }
-  }, [sessionId, rootPath, fontSize, fontFamily, aiCompatibilityMode, terminalRenderer, pasteToTerminal, allowRemoteClipboardWrite])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/unmount only on session/root change; settings applied live
+  }, [sessionId, rootPath])
 
   useEffect(() => {
     const term = termRef.current
@@ -773,11 +688,12 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive }: { sessionId: strin
 
   useEffect(() => {
     if (!isActive) return
+    if (aiInputFocused) return
     if (!termRef.current) return
     if (termRef.current && termRef.current.element && termRef.current.element.clientWidth > 0) {
       termRef.current.focus()
     }
-  }, [isActive])
+  }, [isActive, aiInputFocused])
 
-  return <div ref={containerRef} className="w-full h-full" style={{ minHeight: 0, userSelect: 'text' }} />
+  return <div ref={containerRef} className="w-full h-full" style={{ minHeight: 0, userSelect: 'text' }} onMouseDown={() => termRef.current?.focus()} onClick={() => termRef.current?.focus()} />
 }

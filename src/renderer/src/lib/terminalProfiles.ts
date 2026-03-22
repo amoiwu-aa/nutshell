@@ -22,10 +22,10 @@ export function getTerminalInteractionProfileConfig(
       id: profile,
       label: '重交互 CLI',
       description: '为 opencode / claude / codex 这类持续刷新的终端工具优化稳定性',
-      scrollback: 3000,
+      scrollback: 5000,
       chunkSize: 8192,
-      maxPendingBytes: 384 * 1024,
-      maxPendingWhenHidden: 96 * 1024,
+      maxPendingBytes: 4 * 1024 * 1024,
+      maxPendingWhenHidden: 1024 * 1024,
       rendererMode: 'canvas'
     }
   }
@@ -82,4 +82,18 @@ export function detectHeavyCliCommand(command: string): boolean {
   }
 
   return false
+}
+
+export function detectHeavyCliOutput(output: string): boolean {
+  const text = output.toLowerCase()
+  return (
+    text.includes('opencode') ||
+    text.includes('open code') ||
+    text.includes('codex') ||
+    text.includes('claude') ||
+    text.includes('ctrl+t variants') ||
+    text.includes('tab agents') ||
+    text.includes('ctrl+p commands') ||
+    text.includes('esc interrupt')
+  )
 }
