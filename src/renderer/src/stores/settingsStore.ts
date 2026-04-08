@@ -52,7 +52,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     terminalRenderer: 'auto',
     aiCompatibilityMode: false,
     allowRemoteClipboardWrite: true,
-    useRustSshEngine: false,
+    useRustSshEngine: true,
     language: 'zh-CN',
     sidebarWidth: 260,
     monitorModules: defaultMonitorModules,

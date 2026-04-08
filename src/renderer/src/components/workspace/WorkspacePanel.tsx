@@ -1,3 +1,15 @@
+
+function safeTerminalFit(terminal: any, addon: any, container: HTMLElement | null) {
+  try {
+    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
+    if (terminal?._core?._renderService) {
+      if (typeof addon?.fit === 'function') {
+        addon.fit()
+      }
+    }
+  } catch(e) {}
+}
+
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   Sparkles, Terminal, GitBranch, Search, AlertCircle, AlertTriangle,
@@ -459,7 +471,12 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
     term.unicode.activeVersion = TERMINAL_UNICODE_VERSION
     term.open(containerRef.current)
     term.options.overviewRulerWidth = 0
-    fit.fit()
+    try {
+      const container = containerRef.current
+      if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+        safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null)
+      }
+    } catch { }
     termRef.current = term
     fitAddonRef.current = fit
 
@@ -502,7 +519,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
 
       const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
       term.options.scrollback = nextProfile.scrollback
-      fitAddonRef.current?.fit()
+      safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null)
 
       if (rendererDisposeRef.current) {
         rendererDisposeRef.current()
@@ -626,7 +643,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
     let debounceTimer: any
     const ro = new ResizeObserver(() => {
       clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => { try { if (containerRef.current && containerRef.current.offsetWidth > 0) fit.fit() } catch {} }, 100)
+      debounceTimer = setTimeout(() => { try { if (containerRef.current && containerRef.current.offsetWidth > 0) safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null) } catch {} }, 100)
     })
     ro.observe(containerRef.current)
 
@@ -637,7 +654,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
         resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current),
         undefined
       ).dispose
-      try { fit.fit() } catch { }
+      try { safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null) } catch { }
     }, 100)
 
     return () => {
@@ -682,7 +699,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
       term.options.minimumContrastRatio = 1
       term.options.lineHeight = 1.15
       term.options.letterSpacing = 0
-      fitAddonRef.current?.fit()
+      safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null)
     } catch { }
   }, [fontSize, fontFamily, aiCompatibilityMode])
 

@@ -103,7 +103,7 @@ export function ContentArea() {
           </Suspense>
           <Suspense fallback={<LoadingFallback name="文件管理器" />}>
             {tab.type === 'sftp' && (
-              <FileExplorer sessionId={tab.sessionId} tabId={tab.id} />
+              <FileExplorer sessionId={tab.sessionId} tabId={tab.id} containerId={tab.dockerContainerId} />
             )}
             {tab.type === 'editor' && tab.filePath && tab.fileName && (
               <FileEditor

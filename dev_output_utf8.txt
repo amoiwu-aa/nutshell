@@ -1,0 +1,59 @@
+﻿
+> nutshell@1.0.2 dev
+> electron-vite dev
+
+[36mvite v6.4.1 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 22 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mindex.js  [39m[1m[2m228.26 kB[22m[1m[22m
+[32m✓ built in 1.06s[39m
+[32m
+build the electron main process successfully[39m
+[90m
+-----
+[39m
+[36mvite v6.4.1 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m18.52 kB[22m[1m[22m
+[32m✓ built in 31ms[39m
+[32m
+build the electron preload files successfully[39m
+[90m
+-----
+[39m
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+start electron app...
+[39m
+
+[rust-core] starting via debug executable: C:\Users\wuxiang\Desktop\python\sshtool\native\nutshell-core\target\debug\nutshell-core.exe
+node.exe : [renderer:did-fail-load] {
+At C:\Users\wuxiang\AppData\Roaming\npm\npm.ps1:24 char:5
++     & "node$exe"  "$basedir/node_modules/npm/bin/npm-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([renderer:did-fail-load] {:Stri 
+   ng) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  errorCode: -102,
+  errorDescription: 'ERR_CONNECTION_REFUSED',
+  validatedURL: 'http://localhost:5173/'
+}
+(node:81876) electron: Failed to load URL: http://localhost:5173/ with error:
+ ERR_CONNECTION_REFUSED
+(Use `electron --trace-warnings ...` to show where the warning was created)
+[renderer:error] %cElectron Security Warning (Insecure Content-Security-Polic
+y) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged. (node:electron/js2c/renderer_init:2)

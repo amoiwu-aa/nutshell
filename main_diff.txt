@@ -1,0 +1,46 @@
+﻿diff --git a/src/main/index.ts b/src/main/index.ts
+index 0d4fa7c..0344259 100644
+--- a/src/main/index.ts
++++ b/src/main/index.ts
+@@ -9,7 +9,6 @@ import { registerConfigHandlers } from './ipc/configHandlers'
+ import { registerPortForwardHandlers } from './ipc/portForwardHandlers'
+ import { registerAIHandlers } from './ipc/aiHandlers'
+ import { registerWorkspaceHandlers } from './ipc/workspaceHandlers'
+-import { registerLspHandlers } from './ipc/lspHandlers'
+ import { registerSystemHandlers } from './ipc/systemHandlers'
+ import { registerRustCoreHandlers } from './ipc/rustCoreHandlers'
+ import { sshManager } from './ssh/SSHManager'
+@@ -96,6 +95,25 @@ function createWindow(): void {
+     return { action: 'deny' }
+   })
+ 
++  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
++    const levelLabel = ['log', 'warn', 'error', 'debug', 'info'][level] || `level-${level}`
++    console[levelLabel === 'error' ? 'error' : levelLabel === 'warn' ? 'warn' : 'log'](
++      `[renderer:${levelLabel}] ${message} (${sourceId}:${line})`
++    )
++  })
++
++  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
++    console.error('[renderer:did-fail-load]', { errorCode, errorDescription, validatedURL })
++  })
++
++  mainWindow.webContents.on('render-process-gone', (_event, details) => {
++    console.error('[renderer:render-process-gone]', details)
++  })
++
++  mainWindow.on('unresponsive', () => {
++    console.error('[window:unresponsive] main window became unresponsive')
++  })
++
+   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+   } else {
+@@ -149,7 +167,6 @@ app.whenReady().then(() => {
+   registerPortForwardHandlers()
+   registerAIHandlers()
+   registerWorkspaceHandlers()
+-  registerLspHandlers()
+   registerSystemHandlers()
+   registerRustCoreHandlers()
+ 

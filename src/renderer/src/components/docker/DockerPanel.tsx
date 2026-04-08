@@ -5,6 +5,7 @@ import {
   X, AlertCircle, Copy, Check, Plus, Network, Info, Settings, Layers, Save
 } from 'lucide-react'
 import { cn, formatBytes } from '../../lib/utils'
+import { useConnectionStore } from '../../stores/connectionStore'
 
 interface ContainerInfo { id: string; name: string; image: string; status: string; state: string; ports: string; created: string; size: string }
 interface ImageInfo { id: string; repository: string; tag: string; size: string; created: string }
@@ -33,8 +34,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
       logPreRef.current.scrollTop = logPreRef.current.scrollHeight
     }
   }, [logViewer?.logs, logViewer?.loading])
-  // File browser state
-  const [fileBrowser, setFileBrowser] = useState<any>(null)
+  // File browser state is now managed via Tabs.
   // Container detail state
   const [containerDetail, setContainerDetail] = useState<any>(null)
   const [detailTab, setDetailTab] = useState('info')
@@ -123,53 +123,24 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   }
   const handleExec = async (containerId: string) => {
     const r = await window.api.docker.containerExec(sessionId, containerId)
-    if (r.success) window.dispatchEvent(new CustomEvent('docker:execTerminal', { detail: { sessionId: r.execSessionId, containerId } }))
+    if (r.success) window.dispatchEvent(new CustomEvent('docker:execTerminal', { detail: { sessionId: r.execSessionId, containerId, parentSessionId: sessionId } }))
   }
   const handleInspect = async (containerId: string) => {
     const r = await window.api.docker.inspectContainer(sessionId, containerId)
     if (r.success) { setContainerDetail(r.data); setDetailTab('info') }
   }
 
-  // Container file browser
+  // Container file browser - open in a new Tab using SFTP panel
   const openFileBrowser = async (containerId: string, containerName: string, path: string = '/') => {
-    setFileBrowser({ containerId, containerName, path, files: [], loading: true, error: null })
-    try {
-      const r = await window.api.docker.listContainerFiles(sessionId, containerId, path)
-      if (r.success) setFileBrowser((p: any) => p ? { ...p, files: r.files, loading: false } : null)
-      else setFileBrowser((p: any) => p ? { ...p, error: r.error, loading: false } : null)
-    } catch (err: any) { setFileBrowser((p: any) => p ? { ...p, error: err.message, loading: false } : null) }
-  }
-  const navigateContainerDir = (dir: string) => {
-    if (!fileBrowser) return
-    const newPath = fileBrowser.path === '/' ? `/${dir}` : `${fileBrowser.path}/${dir}`
-    openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, newPath)
-  }
-  const containerFileUp = () => {
-    if (!fileBrowser || fileBrowser.path === '/') return
-    const parent = fileBrowser.path.split('/').slice(0, -1).join('/') || '/'
-    openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, parent)
-  }
-  const handleContainerFileUpload = async () => {
-    if (!fileBrowser) return
-    const result = await window.api.config.selectFile()
-    if (result.success && !result.canceled && result.filePaths?.length > 0) {
-      const localPath = result.filePaths[0]
-      const filename = localPath.split(/[/\\]/).pop()
-      const destPath = fileBrowser.path === '/' ? `/${filename}` : `${fileBrowser.path}/${filename}`
-      setFileBrowser((p: any) => p ? { ...p, loading: true } : null)
-      try { await window.api.docker.copyToContainer(sessionId, fileBrowser.containerId, localPath, destPath); openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, fileBrowser.path) }
-      catch { setFileBrowser((p: any) => p ? { ...p, loading: false, error: '上传失败' } : null) }
-    }
-  }
-  const handleContainerFileDownload = async (filename: string) => {
-    if (!fileBrowser) return
-    const containerFilePath = fileBrowser.path === '/' ? `/${filename}` : `${fileBrowser.path}/${filename}`
-    const result = await window.api.config.selectDirectory()
-    if (result.success && !result.canceled && result.filePaths?.length > 0) {
-      setFileBrowser((p: any) => p ? { ...p, loading: true } : null)
-      try { await window.api.docker.copyFromContainer(sessionId, fileBrowser.containerId, containerFilePath, `${result.filePaths[0]}\\${filename}`); setFileBrowser((p: any) => p ? { ...p, loading: false } : null) }
-      catch { setFileBrowser((p: any) => p ? { ...p, loading: false, error: '下载失败' } : null) }
-    }
+    useConnectionStore.getState().addTab({
+      id: crypto.randomUUID(),
+      connectionId: '',
+      sessionId: sessionId,
+      name: `容器: ${containerName}`,
+      type: 'sftp',
+      dockerContainerId: containerId,
+      connected: true
+    })
   }
   const handlePullImage = async () => {
     if (!pullImageName.trim()) return
@@ -508,46 +479,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
         </div>
       )}
 
-      {/* Container File Browser */}
-      {fileBrowser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onKeyDown={(e) => e.key === 'Escape' && setFileBrowser(null)}>
-          <div className="absolute inset-0 bg-black/50 dialog-overlay" onClick={() => setFileBrowser(null)} />
-          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-[700px] max-h-[80vh] overflow-hidden dialog-content flex flex-col">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-              <div className="flex items-center gap-2"><FolderOpen className="w-4 h-4 text-yellow-500" /><h3 className="text-sm font-medium">容器文件 - {fileBrowser.containerName}</h3></div>
-              <div className="flex items-center gap-1">
-                <button onClick={handleContainerFileUpload} className="flex items-center gap-1 px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90"><Upload className="w-3 h-3" />上传</button>
-                <button onClick={() => setFileBrowser(null)} className="p-1.5 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 px-5 py-2 border-b border-border bg-card/50 shrink-0">
-              <button onClick={containerFileUp} className="p-1 hover:bg-accent rounded"><ArrowUp className="w-3.5 h-3.5" /></button>
-              <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, '/')} className="hover:text-primary"><Home className="w-3.5 h-3.5" /></button>
-              {fileBrowser.path.split('/').filter(Boolean).map((part: string, i: number, arr: string[]) => (
-                <span key={i} className="flex items-center gap-0.5 text-sm"><ChevronRight className="w-3 h-3 text-muted-foreground" />
-                  <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, '/' + arr.slice(0, i + 1).join('/'))} className="hover:text-primary">{part}</button>
-                </span>
-              ))}
-              <button onClick={() => openFileBrowser(fileBrowser.containerId, fileBrowser.containerName, fileBrowser.path)} className="ml-auto p-1 hover:bg-accent rounded"><RefreshCw className={cn('w-3.5 h-3.5', fileBrowser.loading && 'animate-spin')} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[calc(80vh-130px)]">
-              {fileBrowser.loading ? <div className="flex items-center justify-center h-full"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-                : fileBrowser.error ? <div className="flex flex-col items-center justify-center h-full p-4"><AlertCircle className="w-6 h-6 text-destructive mb-2" /><p className="text-xs text-destructive">{fileBrowser.error}</p></div>
-                  : <table className="w-full text-sm"><thead className="sticky top-0 bg-card text-xs text-muted-foreground"><tr><th className="text-left px-4 py-1.5 font-medium">名称</th><th className="text-right px-4 py-1.5 font-medium w-20">大小</th><th className="text-center px-4 py-1.5 font-medium w-28">权限</th><th className="text-center px-4 py-1.5 font-medium w-16">操作</th></tr></thead>
-                    <tbody>{fileBrowser.files.map((f: any) => (
-                      <tr key={f.filename} onDoubleClick={() => f.isDirectory && navigateContainerDir(f.filename)} className="hover:bg-accent/50 cursor-pointer">
-                        <td className="px-4 py-1.5 flex items-center gap-2">{f.isDirectory ? <FolderOpen className="w-4 h-4 text-yellow-500 shrink-0" /> : <FileText className="w-4 h-4 text-muted-foreground shrink-0" />}<span className="truncate">{f.filename}</span></td>
-                        <td className="px-4 py-1.5 text-right text-xs text-muted-foreground">{f.isDirectory ? '-' : f.size}</td>
-                        <td className="px-4 py-1.5 text-center font-mono text-xs text-muted-foreground">{f.permissions}</td>
-                        <td className="px-4 py-1.5 text-center">{!f.isDirectory && <button onClick={() => handleContainerFileDownload(f.filename)} className="p-1 hover:bg-accent rounded"><Download className="w-3.5 h-3.5 text-primary" /></button>}</td>
-                      </tr>
-                    ))}{fileBrowser.files.length === 0 && <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-xs">空目录</td></tr>}</tbody>
-                  </table>}
-            </div>
-            <div className="px-5 py-2 border-t border-border text-xs text-muted-foreground shrink-0">{fileBrowser.files.length} 个项目 | 容器: {fileBrowser.containerId?.substring(0, 12)}</div>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }

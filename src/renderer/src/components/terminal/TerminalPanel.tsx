@@ -1,3 +1,19 @@
+
+function safeTerminalFit(terminal: any, addon: any, container: HTMLElement | null) {
+  try {
+    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
+    // _renderService.dimensions is a getter that throws if the internal
+    // _renderer has not been attached yet (e.g. before WebGL/Canvas/DOM addon
+    // is loaded).  Guard against that by checking _renderer.value first.
+    const rs = terminal?._core?._renderService
+    if (rs && rs._renderer?.value) {
+      if (typeof addon?.fit === 'function') {
+        addon.fit()
+      }
+    }
+  } catch(e) {}
+}
+
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -249,6 +265,17 @@ function TerminalInstance({
     terminal.open(containerRef.current)
     terminal.options.overviewRulerWidth = 0
 
+    // Attach renderer immediately after open() so subsequent code
+    // (focus, fit, cursor positioning) has valid dimensions.
+    const preferredRenderer = colorTheme === 'theme-glass'
+      ? 'canvas'
+      : resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current)
+    rendererDisposeRef.current = attachPreferredRenderer(
+      terminal,
+      preferredRenderer,
+      setEffectiveRenderer
+    ).dispose
+
     const textarea = terminal.textarea
     if (textarea) {
       textarea.style.zIndex = '1'
@@ -270,7 +297,12 @@ function TerminalInstance({
       }
     }
 
-    fitAddon.fit()
+    try {
+      const container = containerRef.current
+      if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+        safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null)
+      }
+    } catch { }
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
@@ -283,10 +315,6 @@ function TerminalInstance({
     const pasteFromClipboard = () => {
       pasteToTerminal(window.api.clipboard.readText())
     }
-
-    const preferredRenderer = colorTheme === 'theme-glass'
-      ? 'canvas'
-      : resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current)
 
     const switchInteractionProfile = (profile: TerminalInteractionProfile) => {
       if (interactionProfileRef.current === profile) return
@@ -302,7 +330,7 @@ function TerminalInstance({
 
       const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
       terminal.options.scrollback = nextProfile.scrollback
-      fitAddonRef.current?.fit()
+      try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
 
       if (rendererDisposeRef.current) {
         rendererDisposeRef.current()
@@ -472,7 +500,7 @@ function TerminalInstance({
         if (isDisposed) return
         try {
           const container = containerRef.current
-          if (container && container.offsetWidth > 0 && container.offsetHeight > 0) fitAddon.fit()
+          if (container && container.offsetWidth > 0 && container.offsetHeight > 0) safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null)
         } catch { }
       }, 150)
     })
@@ -485,14 +513,7 @@ function TerminalInstance({
     setTimeout(() => {
       if (isDisposed) return
       if (containerRef.current && containerRef.current.offsetWidth > 0) {
-        try { fitAddon.fit() } catch { }
-
-        // Safely enable Hardware Acceleration ONLY after terminal is fitted into DOM
-        rendererDisposeRef.current = attachPreferredRenderer(
-          terminal,
-          preferredRenderer,
-          setEffectiveRenderer
-        ).dispose
+        try { safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null) } catch { }
 
         if (isDisposed) return
         const { cols, rows } = terminal; lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows)
@@ -545,7 +566,7 @@ function TerminalInstance({
       terminal.options.minimumContrastRatio = 1
       terminal.options.lineHeight = 1.15
       terminal.options.letterSpacing = 0
-      fitAddonRef.current?.fit()
+      safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null)
     } catch { }
   }, [selectedTerminalTheme, fontSize, fontFamily, colorTheme, aiCompatibilityMode])
 

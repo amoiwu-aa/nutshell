@@ -64,6 +64,14 @@ pub struct ReadFileParams {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ReadBinaryFileParams {
+    pub session_id: String,
+    pub path: String,
+    pub offset: Option<u64>,
+    pub max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SearchParams {
     pub session_id: String,
     pub root_path: String,
@@ -76,6 +84,15 @@ pub struct WriteFileParams {
     pub session_id: String,
     pub path: String,
     pub content: String,
+    pub create_dirs: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WriteBinaryFileParams {
+    pub session_id: String,
+    pub path: String,
+    pub content_base64: String,
+    pub append: Option<bool>,
     pub create_dirs: Option<bool>,
 }
 
@@ -107,6 +124,13 @@ pub struct MovePathParams {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ChmodPathParams {
+    pub session_id: String,
+    pub path: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ReadMultipleFilesParams {
     pub session_id: String,
     pub paths: Vec<String>,
@@ -117,6 +141,41 @@ pub struct ReadMultipleFilesParams {
 pub struct ProjectRootParams {
     pub session_id: String,
     pub root_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MonitorSnapshotParams {
+    pub session_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PortForwardRuleParams {
+    pub id: String,
+    pub connection_id: String,
+    pub r#type: String,
+    pub local_host: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForwardRemoveParams {
+    pub rule_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DockerExecParams {
+    pub session_id: String,
+    pub container_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DockerLogStreamParams {
+    pub session_id: String,
+    pub container_id: String,
+    pub tail: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,4 +241,10 @@ pub enum CoreEvent {
     SshClose { session_id: String },
     #[serde(rename = "event")]
     SshError { session_id: String, error: String },
+    #[serde(rename = "event")]
+    PortForwardStatus { rule_id: String, status: String },
+    #[serde(rename = "event")]
+    DockerLogs { container_id: String, data: String },
+    #[serde(rename = "event")]
+    ExternalShellClose { session_id: String },
 }

@@ -224,7 +224,6 @@ class SSHManager {
     try { sftpManager.closeSFTP(sessionId) } catch { /* ignore */ }
     try { portForwardManager.removeAllForwards(sessionId) } catch { /* ignore */ }
     try { serverMonitor.stop(sessionId, true) } catch { /* ignore */ }
-    try { this.closeAllLspChannels(sessionId) } catch { /* ignore */ }
   }
 
   private async attemptReconnect(sessionId: string): Promise<void> {
@@ -596,97 +595,12 @@ class SSHManager {
     })
   }
 
-  // --- LSP Stream channels (persistent bidirectional exec streams) ---
-  private lspChannels: Map<string, ClientChannel> = new Map()
-
-  /**
-   * Create a persistent bidirectional exec stream for LSP communication.
-   * Unlike exec(), this does NOT wait for the command to finish.
-   * Returns a channelId for subsequent read/write operations.
-   */
-  async execStream(
-    sessionId: string,
-    command: string,
-    onData: (data: string) => void,
-    onStderr: (data: string) => void,
-    onClose: () => void
-  ): Promise<string> {
-    const session = this.sessions.get(sessionId)
-    if (!session) throw new Error('Session not found')
-    if (!session.connected) throw new Error('Session not connected')
-
-    const channelId = `lsp-${sessionId}-${Date.now()}`
-
-    return new Promise((resolve, reject) => {
-      session.client.exec(command, (err, stream) => {
-        if (err) { reject(err); return }
-
-        this.lspChannels.set(channelId, stream)
-
-        stream.on('data', (data: Buffer) => {
-          onData(data.toString('utf-8'))
-        })
-
-        stream.stderr.on('data', (data: Buffer) => {
-          onStderr(data.toString('utf-8'))
-        })
-
-        stream.on('close', () => {
-          stream.removeAllListeners()
-          this.lspChannels.delete(channelId)
-          onClose()
-        })
-
-        stream.on('error', (err: Error) => {
-          stream.removeAllListeners()
-          this.lspChannels.delete(channelId)
-          onClose()
-        })
-
-        resolve(channelId)
-      })
-    })
-  }
-
-  /**
-   * Write data to an LSP stream channel
-   */
-  writeLspChannel(channelId: string, data: string): boolean {
-    const stream = this.lspChannels.get(channelId)
-    if (stream) {
-      stream.write(data)
-      return true
-    }
-    return false
-  }
-
-  /**
-   * Close an LSP stream channel
-   */
-  closeLspChannel(channelId: string): void {
-    const stream = this.lspChannels.get(channelId)
-    if (stream) {
-      stream.removeAllListeners()
-      stream.end()
-      this.lspChannels.delete(channelId)
-    }
-  }
-
-  /**
-   * Close all LSP channels for a session
-   */
-  closeAllLspChannels(sessionId: string): void {
-    for (const [id, stream] of this.lspChannels.entries()) {
-      if (id.startsWith(`lsp-${sessionId}-`)) {
-        stream.removeAllListeners()
-        stream.end()
-        this.lspChannels.delete(id)
-      }
-    }
-  }
-
   // --- External shell management (for docker exec, etc.) ---
   private externalShells: Map<string, ClientChannel> = new Map()
+
+  hasExternalShell(shellId: string): boolean {
+    return this.externalShells.has(shellId)
+  }
 
   registerExternalShell(shellId: string, stream: ClientChannel): void {
     this.externalShells.set(shellId, stream)

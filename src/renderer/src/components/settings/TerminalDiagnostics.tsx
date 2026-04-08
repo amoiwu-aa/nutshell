@@ -1,3 +1,15 @@
+
+function safeTerminalFit(terminal: any, addon: any, container: HTMLElement | null) {
+  try {
+    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
+    if (terminal?._core?._renderService) {
+      if (typeof addon?.fit === 'function') {
+        addon.fit()
+      }
+    }
+  } catch(e) {}
+}
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -79,7 +91,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
     terminal.loadAddon(unicode11Addon)
     terminal.unicode.activeVersion = TERMINAL_UNICODE_VERSION
     terminal.open(containerRef.current)
-    fitAddon.fit()
+    try { safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null) } catch { }
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
@@ -109,7 +121,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
     terminal.options.minimumContrastRatio = 1
     terminal.options.lineHeight = 1.15
     terminal.options.letterSpacing = 0
-    fitAddonRef.current?.fit()
+    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
   }, [fontSize, fontFamily, aiCompatibilityMode])
 
   useEffect(() => {
@@ -118,7 +130,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
 
     rendererDisposeRef.current?.()
     rendererDisposeRef.current = attachPreferredRenderer(terminal, terminalRenderer, setEffectiveRenderer).dispose
-    fitAddonRef.current?.fit()
+    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
 
     return () => {
       rendererDisposeRef.current?.()
@@ -138,7 +150,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
         aiCompatibilityMode
       })
     )
-    fitAddonRef.current?.fit()
+    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
   }, [terminalRenderer, effectiveRenderer, aiCompatibilityMode])
 
   const envEntries = getTerminalEnvironment(aiCompatibilityMode)

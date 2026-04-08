@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 
+const TRANSFER_HISTORY_STORAGE_KEY = 'nutshell-transfer-history'
+const MAX_TRANSFER_HISTORY = 200
+
 export type TransferStatus = 'queued' | 'active' | 'completed' | 'failed' | 'cancelled'
 export type TransferDirection = 'upload' | 'download'
 
@@ -40,7 +43,7 @@ function calculateSpeed(id: string, transferred: number): number {
   const prev = progressTimestamps.get(id)
   if (prev) {
     const timeDiff = (now - prev.time) / 1000
-    if (timeDiff > 0.3) {
+    if (timeDiff > 0.1) {
       const bytesDiff = transferred - prev.bytes
       const speed = Math.max(0, bytesDiff / timeDiff)
       progressTimestamps.set(id, { time: now, bytes: transferred })
@@ -64,6 +67,78 @@ interface TransferState {
   getActiveCount: () => number
   setSubFiles: (transferId: string, files: SubFileItem[]) => void
   setSubFileStatus: (transferId: string, fileIndex: number, status: string) => void
+  setSubFileStatusBatch: (transferId: string, updates: { fileIndex: number; status: string }[]) => void
+}
+
+function canUseStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+}
+
+function loadTransferHistory(): TransferItem[] {
+  if (!canUseStorage()) return []
+  try {
+    const raw = window.localStorage.getItem(TRANSFER_HISTORY_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((item) => ({
+      ...item,
+      speed: 0,
+      eta: 0,
+      status: item.status === 'active' || item.status === 'queued' ? 'failed' : item.status,
+      error: item.status === 'active' || item.status === 'queued' ? '应用重启前传输中断' : item.error,
+      resumable: item.status === 'active' || item.status === 'queued' ? item.transferredBytes > 0 : item.resumable
+    })) as TransferItem[]
+  } catch {
+    return []
+  }
+}
+
+let _persistTimer: ReturnType<typeof setTimeout> | null = null
+
+function persistTransferHistory(transfers: TransferItem[]): void {
+  if (!canUseStorage()) return
+  if (_persistTimer) return // already scheduled
+  _persistTimer = setTimeout(() => {
+    _persistTimer = null
+    try {
+      // Read latest state at flush time, not at schedule time
+      const latest = useTransferStore.getState().transfers
+      const sanitized = latest
+        .slice(0, MAX_TRANSFER_HISTORY)
+        .map((t) => ({
+          ...t,
+          speed: 0,
+          eta: 0,
+          // Strip sub-files from persistence to reduce storage size
+          subFiles: undefined
+        }))
+      window.localStorage.setItem(TRANSFER_HISTORY_STORAGE_KEY, JSON.stringify(sanitized))
+    } catch {
+      // ignore storage errors
+    }
+  }, 2000)
+}
+
+function persistTransferHistoryImmediate(transfers: TransferItem[]): void {
+  if (!canUseStorage()) return
+  if (_persistTimer) {
+    clearTimeout(_persistTimer)
+    _persistTimer = null
+  }
+  try {
+    const sanitized = transfers
+      .slice(0, MAX_TRANSFER_HISTORY)
+      .map((t) => ({
+        ...t,
+        speed: 0,
+        eta: 0,
+        subFiles: undefined
+      }))
+    window.localStorage.setItem(TRANSFER_HISTORY_STORAGE_KEY, JSON.stringify(sanitized))
+  } catch {
+    // ignore storage errors
+  }
 }
 
 const transferExecutors = new Map<string, () => Promise<any>>()
@@ -124,13 +199,15 @@ async function processQueue() {
 }
 
 export const useTransferStore = create<TransferState>((set, get) => ({
-  transfers: [],
+  transfers: loadTransferHistory(),
 
   addTransfer: (transfer) => {
     progressTimestamps.delete(transfer.id)
-    set((state) => ({
-      transfers: [transfer, ...state.transfers]
-    }))
+    set((state) => {
+      const transfers = [transfer, ...state.transfers].slice(0, MAX_TRANSFER_HISTORY)
+      persistTransferHistory(transfers)
+      return { transfers }
+    })
   },
 
   enqueueTransfer: (transfer, executor) => {
@@ -141,8 +218,8 @@ export const useTransferStore = create<TransferState>((set, get) => ({
 
   updateProgress: (id, transferred, total, currentFile?) => {
     const speed = calculateSpeed(id, transferred)
-    set((state) => ({
-      transfers: state.transfers.map((t) => {
+    set((state) => {
+      const transfers = state.transfers.map((t) => {
         if (t.id !== id) return t
         // Ignore progress updates for terminal states to prevent late IPC events from making them 'active' again
         if (t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled') return t
@@ -160,12 +237,14 @@ export const useTransferStore = create<TransferState>((set, get) => ({
           status: 'active' as TransferStatus
         }
       })
-    }))
+      persistTransferHistory(transfers)
+      return { transfers }
+    })
   },
 
   setStatus: (id, status, error?) => {
-    set((state) => ({
-      transfers: state.transfers.map((t) => {
+    set((state) => {
+      const transfers = state.transfers.map((t) => {
         if (t.id !== id) return t
         const updates: Partial<TransferItem> = { status, error }
         if (status === 'completed') {
@@ -201,20 +280,26 @@ export const useTransferStore = create<TransferState>((set, get) => ({
         }
         return { ...t, ...updates }
       })
-    }))
+      persistTransferHistoryImmediate(transfers)
+      return { transfers }
+    })
   },
 
   removeTransfer: (id) => {
     progressTimestamps.delete(id)
-    set((state) => ({
-      transfers: state.transfers.filter((t) => t.id !== id)
-    }))
+    set((state) => {
+      const transfers = state.transfers.filter((t) => t.id !== id)
+      persistTransferHistoryImmediate(transfers)
+      return { transfers }
+    })
   },
 
   clearCompleted: () => {
-    set((state) => ({
-      transfers: state.transfers.filter((t) => t.status !== 'completed')
-    }))
+    set((state) => {
+      const transfers = state.transfers.filter((t) => t.status !== 'completed')
+      persistTransferHistoryImmediate(transfers)
+      return { transfers }
+    })
   },
 
   getActiveCount: () => {
@@ -222,22 +307,41 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   },
 
   setSubFiles: (transferId, files) => {
-    set((state) => ({
-      transfers: state.transfers.map((t) =>
+    set((state) => {
+      const transfers = state.transfers.map((t) =>
         t.id === transferId ? { ...t, subFiles: files } : t
       )
-    }))
+      // No persist needed — sub-files are transient UI state
+      return { transfers }
+    })
   },
 
   setSubFileStatus: (transferId, fileIndex, status) => {
-    set((state) => ({
-      transfers: state.transfers.map((t) => {
+    set((state) => {
+      const transfers = state.transfers.map((t) => {
         if (t.id !== transferId || !t.subFiles) return t
         const newSubFiles = t.subFiles.map((sf) =>
           sf.index === fileIndex ? { ...sf, status: status as SubFileItem['status'] } : sf
         )
         return { ...t, subFiles: newSubFiles }
       })
-    }))
+      // No persist needed — sub-file status is transient UI state
+      return { transfers }
+    })
+  },
+
+  setSubFileStatusBatch: (transferId: string, updates: { fileIndex: number; status: string }[]) => {
+    set((state) => {
+      const transfers = state.transfers.map((t) => {
+        if (t.id !== transferId || !t.subFiles) return t
+        const updateMap = new Map(updates.map(u => [u.fileIndex, u.status]))
+        const newSubFiles = t.subFiles.map((sf) => {
+          const newStatus = updateMap.get(sf.index)
+          return newStatus ? { ...sf, status: newStatus as SubFileItem['status'] } : sf
+        })
+        return { ...t, subFiles: newSubFiles }
+      })
+      return { transfers }
+    })
   }
 }))

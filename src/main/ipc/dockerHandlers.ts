@@ -44,6 +44,24 @@ export function registerDockerHandlers(): void {
     }
   )
 
+  ipcMain.handle('docker:startLogStream', async (_event, sessionId: string, containerId: string) => {
+    try {
+      await dockerManager.streamContainerLogs(sessionId, containerId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('docker:stopLogStream', async (_event, containerId: string) => {
+    try {
+      dockerManager.stopLogStream(containerId)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle(
     'docker:containerExec',
     async (_event, sessionId: string, containerId: string) => {

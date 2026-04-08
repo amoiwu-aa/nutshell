@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar } from './components/layout/Sidebar'
 import { TabBar } from './components/layout/TabBar'
@@ -136,10 +136,24 @@ function AppContent() {
       useTransferStore.getState().setSubFileStatus(transferId, fileIndex, status)
     })
 
+    const cleanupFileStatusBatch = window.api.sftp.onFileStatusBatch((batch: { id: string; fileIdx: number; status: string }[]) => {
+      const store = useTransferStore.getState()
+      // Group by transfer id for efficient batch update
+      const byTransfer = new Map<string, { fileIndex: number; status: string }[]>()
+      for (const item of batch) {
+        if (!byTransfer.has(item.id)) byTransfer.set(item.id, [])
+        byTransfer.get(item.id)!.push({ fileIndex: item.fileIdx, status: item.status })
+      }
+      for (const [transferId, updates] of byTransfer) {
+        store.setSubFileStatusBatch(transferId, updates)
+      }
+    })
+
     return () => {
       cleanupProgress()
       cleanupDirFileList()
       cleanupFileStatus()
+      cleanupFileStatusBatch()
       if (rafId !== null) cancelAnimationFrame(rafId)
     }
   }, [])
@@ -253,13 +267,14 @@ function AppContent() {
     }
 
     // Docker exec terminal - creates a new terminal tab for docker container shell
-    const handleDockerExecTerminal = (e: CustomEvent<{ sessionId: string; containerId: string }>) => {
-      const { sessionId: execSessionId, containerId } = e.detail
+    const handleDockerExecTerminal = (e: CustomEvent<{ sessionId: string; containerId: string; parentSessionId?: string }>) => {
+      const { sessionId: execSessionId, containerId, parentSessionId } = e.detail
       const shortId = containerId.substring(0, 12)
       addTab({
         id: uuidv4(),
         connectionId: '',
         sessionId: execSessionId,
+        parentSessionId: parentSessionId || '',
         name: `Docker: ${shortId}`,
         type: 'terminal',
         connected: true
@@ -366,6 +381,20 @@ function AppContent() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
+  // 当前活跃标签对应的物理服务器 sessionId
+  const activePhysicalSession = activeTab?.parentSessionId || activeTab?.sessionId
+  const uniqueSessions = useMemo(() => {
+    const map = new Map<string, string>()
+    tabs.forEach((t) => {
+      // Docker 子终端有 parentSessionId，监控应挂载到父级物理服务器
+      const physicalSession = t.parentSessionId || t.sessionId
+      if(t.type !== 'monitor' && physicalSession) {
+        map.set(physicalSession, physicalSession)
+      }
+    })
+    return Array.from(map.values())
+  }, [tabs])
+
   if (!settingsLoaded) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">
@@ -383,9 +412,13 @@ function AppContent() {
       <div className="flex flex-1 overflow-hidden">
         {!zenMode && <Sidebar />}
         {!zenMode && <ResizableDivider direction="vertical" onResize={handleSidebarResize} onResizeEnd={handleSidebarResizeEnd} />}
-        {!zenMode && activeTab && monitorPanelVisible && (
+        {!zenMode && monitorPanelVisible && uniqueSessions.length > 0 && (
           <Suspense fallback={null}>
-            <MonitorPanel key={activeTab.sessionId} sessionId={activeTab.sessionId} />
+            {uniqueSessions.map((sessionId) => (
+              <div key={`monitor-${sessionId}`} className={activePhysicalSession === sessionId ? 'flex h-full shrink-0' : 'hidden'}>
+                <MonitorPanel sessionId={sessionId} />
+              </div>
+            ))}
           </Suspense>
         )}
         <div className="flex flex-col flex-1 overflow-hidden">
@@ -395,14 +428,18 @@ function AppContent() {
             {!zenMode && activeTab && bottomPanelVisible && (
               <ResizableDivider direction="horizontal" onResize={handleBottomPanelResize} />
             )}
-            {!zenMode && activeTab && (
+            {!zenMode && uniqueSessions.length > 0 && (
               <Suspense fallback={null}>
-                <BottomPanel
-                  sessionId={activeTab.sessionId}
-                  height={bottomPanelVisible ? bottomPanelHeight : 0}
-                  onExecute={handleCommandExecute}
-                  onOpenManager={() => setShowSnippets(true)}
-                />
+                {uniqueSessions.map((sessionId) => (
+                  <div key={`bottom-${sessionId}`} className={activePhysicalSession === sessionId ? 'flex flex-col shrink-0' : 'hidden'}>
+                    <BottomPanel
+                      sessionId={sessionId}
+                      height={bottomPanelVisible ? bottomPanelHeight : 0}
+                      onExecute={handleCommandExecute}
+                      onOpenManager={() => setShowSnippets(true)}
+                    />
+                  </div>
+                ))}
               </Suspense>
             )}
           </div>

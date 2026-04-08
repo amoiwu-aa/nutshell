@@ -124,7 +124,7 @@ const defaultSettings: AppSettings = {
   terminalRenderer: 'auto',
   aiCompatibilityMode: false,
   allowRemoteClipboardWrite: true,
-  useRustSshEngine: false,
+  useRustSshEngine: true,
   language: 'zh-CN',
   sidebarWidth: 260,
   autoReconnect: true,

@@ -11,7 +11,7 @@ export interface Diagnostic {
   endColumn?: number
   message: string
   severity: 'error' | 'warning' | 'info' | 'hint'
-  source: string  // 'monaco' | 'lsp' | 'lint'
+  source: string
 }
 
 interface ProblemsPanelProps {

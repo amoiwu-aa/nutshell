@@ -54,6 +54,7 @@ interface FileInfo {
 interface FileExplorerProps {
   sessionId: string
   tabId: string
+  containerId?: string
 }
 
 // ---------------------------------------------------------------
@@ -287,7 +288,7 @@ function FilePanel({
 // ---------------------------------------------------------------
 // Main FileExplorer component
 // ---------------------------------------------------------------
-export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
+export function FileExplorer({ sessionId, tabId, containerId }: FileExplorerProps) {
   // Remote state
   const [remotePath, setRemotePath] = useState('/')
   const [remoteFiles, setRemoteFiles] = useState<FileInfo[]>([])
@@ -319,9 +320,13 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
       loadLocalFiles(homeDir)
 
       try {
-        const remoteHome = await window.api.sftp.getRemoteHomeDir(sessionId)
-        const startPath = remoteHome?.success && remoteHome.home ? remoteHome.home : '/'
-        loadRemoteFiles(startPath)
+        if (containerId) {
+          loadRemoteFiles('/')
+        } else {
+          const remoteHome = await window.api.sftp.getRemoteHomeDir(sessionId)
+          const startPath = remoteHome?.success && remoteHome.home ? remoteHome.home : '/'
+          loadRemoteFiles(startPath)
+        }
       } catch {
         loadRemoteFiles('/')
       }
@@ -334,7 +339,9 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
       setRemoteLoading(true)
       setRemoteError(null)
       try {
-        const result = await window.api.sftp.list(sessionId, path)
+        const result = containerId
+          ? await window.api.docker.listContainerFiles(sessionId, containerId, path)
+          : await window.api.sftp.list(sessionId, path)
         if (result.success) {
           setRemoteFiles(result.files)
           setRemotePath(path)
@@ -343,7 +350,9 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
           setRemoteError(result.error || '无法加载远程文件列表')
           if (path !== '/') {
             try {
-              const fallback = await window.api.sftp.list(sessionId, '/')
+              const fallback = containerId
+                ? await window.api.docker.listContainerFiles(sessionId, containerId, '/')
+                : await window.api.sftp.list(sessionId, '/')
               if (fallback.success) {
                 setRemoteFiles(fallback.files)
                 setRemotePath('/')
@@ -432,17 +441,25 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
     useConnectionStore.getState().setBottomPanelVisible(true)
 
     // Enqueue the transfer inside the store, which ensures max concurrency 1
-    useTransferStore.getState().enqueueTransfer(item, () => {
+    useTransferStore.getState().enqueueTransfer(item, async () => {
       // The executor function that actually triggers the IPC when its turn arrives
       if (direction === 'upload') {
+        if (containerId) {
+          const res = await window.api.docker.copyToContainer(sessionId, containerId, lPath, rPath)
+          return (res.result === true || res.success === true) ? { success: true } : { success: false, error: res.error }
+        }
         return window.api.sftp.uploadWithId(sessionId, lPath, rPath, transferId)
       } else {
+        if (containerId) {
+          const res = await window.api.docker.copyFromContainer(sessionId, containerId, rPath, lPath)
+          return res.success ? { success: true } : { success: false, error: res.error }
+        }
         return window.api.sftp.downloadWithId(sessionId, rPath, lPath, transferId)
       }
     })
 
     return transferId
-  }, [sessionId])
+  }, [sessionId, containerId])
 
   const handleUpload = async () => {
     if (selectedLocal.size === 0) return
@@ -476,7 +493,11 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
     if (selectedRemote.size === 0) return
     for (const filename of selectedRemote) {
       try {
-        await window.api.sftp.delete(sessionId, `${remotePath}/${filename}`)
+        if (containerId) {
+           await window.api.docker.containerAction(sessionId, containerId, `exec|rm -rf "${remotePath.replace(/"/g, '\\"')}/${filename.replace(/"/g, '\\"')}"`)
+        } else {
+           await window.api.sftp.delete(sessionId, `${remotePath}/${filename}`)
+        }
       } catch {
         // continue
       }
@@ -487,7 +508,11 @@ export function FileExplorer({ sessionId, tabId }: FileExplorerProps) {
   const handleRemoteMkdir = useCallback(async () => {
     const name = prompt('新建文件夹名称:')
     if (name) {
-      await window.api.sftp.mkdir(sessionId, `${remotePath}/${name}`)
+      if (containerId) {
+         await window.api.docker.containerAction(sessionId, containerId, `exec|mkdir -p "${remotePath.replace(/"/g, '\\"')}/${name.replace(/"/g, '\\"')}"`)
+      } else {
+         await window.api.sftp.mkdir(sessionId, `${remotePath}/${name}`)
+      }
       loadRemoteFiles(remotePath)
     }
   }, [sessionId, remotePath, loadRemoteFiles])

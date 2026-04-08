@@ -415,7 +415,7 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-medium mb-3">实验性 Rust SSH 引擎</h3>
+                  <h3 className="text-sm font-medium mb-3">Rust SSH 引擎</h3>
                   <button
                     onClick={() => setSettings({ useRustSshEngine: !settings.useRustSshEngine })}
                     className={cn(
@@ -429,10 +429,10 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
                       <div>
                         <div className="text-sm font-medium">使用 Rust SSH 引擎</div>
                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          新建终端连接时优先使用 Rust sidecar 建立 SSH shell，逐步替代当前 Node `ssh2` 实现。
+                          新建 SSH 连接默认使用 Rust sidecar 建立会话与远程能力，Node `ssh2` 作为兼容回退路径保留。
                         </p>
                         <p className="mt-2 text-xs text-muted-foreground">
-                          当前只覆盖基础终端连接、输入和窗口调整；SFTP、监控、端口转发仍走现有实现。
+                          关闭后，新建连接会退回到 Node `ssh2` 实现。
                         </p>
                       </div>
                       <div

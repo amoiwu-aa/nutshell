@@ -36,6 +36,7 @@ interface WorkspaceAIProps {
   onInsertCode: (code: string) => void; onExecuteCommand: (cmd: string) => void
   onOpenFile: (path: string) => void; onWriteFile: (path: string, content: string) => void
   onReviewDiff?: (path: string, original: string, modified: string) => void
+  onInputFocusChange?: (focused: boolean) => void
   onClose: () => void
 }
 
@@ -96,8 +97,8 @@ function computeLineDiff(original: string, modified: string): { added: number; r
 function MarkdownBlock({ text }: { text: string }) {
   if (!text.trim()) return null
   const lines = text.split('\n')
-  const elements: JSX.Element[] = []
-  let listItems: JSX.Element[] = []
+  const elements: React.ReactElement[] = []
+  let listItems: React.ReactElement[] = []
   let listType: 'ul' | 'ol' | null = null
 
   const flushList = () => {
@@ -113,8 +114,8 @@ function MarkdownBlock({ text }: { text: string }) {
     }
   }
 
-  const renderInline = (s: string): (string | JSX.Element)[] => {
-    const result: (string | JSX.Element)[] = []
+  const renderInline = (s: string): (string | React.ReactElement)[] => {
+    const result: (string | React.ReactElement)[] = []
     // Process: **bold**, *italic*, `code`, [link](url)
     const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g
     let lastIndex = 0
@@ -237,7 +238,7 @@ function MarkdownBlock({ text }: { text: string }) {
 }
 
 // ===== Main Component =====
-export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, onExecuteCommand, onOpenFile, onWriteFile, onReviewDiff, onClose }: WorkspaceAIProps) {
+export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, onExecuteCommand, onOpenFile, onWriteFile, onReviewDiff, onInputFocusChange, onClose }: WorkspaceAIProps) {
   // View state
   const [view, setView] = useState<'list' | 'chat'>('list')
   const [conversations, setConversations] = useState<ConvSummary[]>([])
@@ -264,14 +265,14 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
   const maxTokens = MODEL_CONTEXT_LIMITS[currentModel] || (ai.provider === 'custom' ? (ai.maxTokens || 128000) : 128000)
   const currentModeInfo = MODES.find((m) => m.id === mode) || MODES[0]
 
-  // Auto-scroll only on NEW messages (not on status updates like accept/reject)
+  // Auto-scroll only on NEW messages.
   const prevMsgCountRef = useRef(0)
   useEffect(() => {
-    if (messages.length > prevMsgCountRef.current || toolStatus) {
+    if (messages.length > prevMsgCountRef.current) {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
     prevMsgCountRef.current = messages.length
-  }, [messages.length, toolStatus])
+  }, [messages.length])
 
   // Load conversation list on mount
   useEffect(() => { loadConversations() }, [rootPath])
@@ -281,7 +282,9 @@ export function WorkspaceAI({ sessionId, rootPath, currentFile, onInsertCode, on
     const remove = window.api.ai.onToolCall?.((name: string, args: any) => {
       setToolStatus(`${toolLabels[name] || name}: ${(args.path || args.query || args.cmd || '').substring(0, 60)}`)
     })
-    return () => remove?.()
+    return () => {
+      remove?.()
+    }
   }, [])
 
   // Scan project on mount (silent)
@@ -634,7 +637,7 @@ ${planContent}
                 <button onClick={() => onInsertCode(code)} className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: '#007acc', color: '#fff' }}>插入</button>
               </div>
             </div>
-            <pre className="px-2 py-1.5 text-[13px] font-mono overflow-x-auto" style={{ background: '#1e1e1e', color: '#cccccc', userSelect: 'text' }}>{code}</pre>
+            <pre className="px-2 py-1.5 text-[13px] font-mono overflow-x-auto overflow-y-auto max-h-[320px]" style={{ background: '#1e1e1e', color: '#cccccc', userSelect: 'text', overscrollBehavior: 'contain' }}>{code}</pre>
           </div>
         )
       }
@@ -928,7 +931,7 @@ ${planContent}
           </div>
 
           {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2" style={{ overscrollBehavior: 'contain' }}>
             {messages.length === 0 && (
               <div className="text-center py-8" style={{ color: '#6e7681' }}>
                 <Sparkles className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -952,10 +955,30 @@ ${planContent}
                             <Check className="w-3 h-3 shrink-0 ml-auto" style={{ color: '#3fb950' }} />
                           </div>
                           {tc.result && (
-                            <details className="mt-1"><summary className="text-[11px] cursor-pointer" style={{ color: '#969696' }}>查看结果</summary>
-                              <pre className="mt-1 p-1.5 rounded text-[11px] font-mono overflow-x-auto max-h-[150px] overflow-y-auto" style={{ background: '#1e1e1e', color: '#969696', userSelect: 'text' }}>
-                                {tc.result.substring(0, 1000)}{tc.result.length > 1000 ? '...' : ''}
-                              </pre>
+                            <details className="mt-1 rounded overflow-hidden" style={{ border: '1px solid #3c3c3c', background: '#16181c' }}>
+                              <summary className="text-[11px] cursor-pointer list-none flex items-center gap-2 px-2 py-1.5 sticky top-0" style={{ color: '#c9d1d9', background: '#202329', borderBottom: '1px solid #30363d' }}>
+                                <span className="text-[10px] uppercase tracking-wide" style={{ color: '#58a6ff' }}>结果</span>
+                                <span className="truncate" style={{ color: '#8b949e' }}>{toolLabels[tc.tool] || tc.tool}</span>
+                                <span className="ml-auto text-[10px] tabular-nums" style={{ color: '#8b949e' }}>{tc.result.length} chars</span>
+                              </summary>
+                              <div className="p-2">
+                                <div className="flex justify-end mb-1.5">
+                                  <button
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      navigator.clipboard.writeText(tc.result)
+                                    }}
+                                    className="px-2 py-1 rounded text-[11px] hover:bg-[#2a2d2e]"
+                                    style={{ color: '#969696', border: '1px solid #30363d' }}
+                                  >
+                                    复制全部
+                                  </button>
+                                </div>
+                                <pre className="p-2 rounded text-[11px] font-mono overflow-x-auto overflow-y-auto max-h-[360px] whitespace-pre-wrap break-words" style={{ background: '#0d1117', color: '#c9d1d9', userSelect: 'text', overscrollBehavior: 'contain' }}>
+                                  {tc.result}
+                                </pre>
+                              </div>
                             </details>
                           )}
                         </div>
@@ -996,8 +1019,14 @@ ${planContent}
                 placeholder={currentModeInfo.desc}
                 rows={2} className="flex-1 px-2.5 py-1.5 rounded-lg text-[13px] outline-none resize-none"
                 style={{ background: '#3c3c3c', color: '#cccccc', border: '1px solid #3c3c3c' }}
-                onFocus={(e) => (e.target.style.borderColor = '#007fd4')}
-                onBlur={(e) => (e.target.style.borderColor = '#3c3c3c')}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#007fd4'
+                  onInputFocusChange?.(true)
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#3c3c3c'
+                  onInputFocusChange?.(false)
+                }}
                 disabled={loading} />
               <button onClick={handleSend} disabled={loading || !input.trim()}
                 className="self-end p-2 rounded-lg disabled:opacity-30" style={{ background: '#007acc', color: '#ffffff' }}>

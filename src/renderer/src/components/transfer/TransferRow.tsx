@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Upload, Download, X, Check, RotateCcw, AlertCircle, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react'
 import { formatBytes, formatBytesPerSec } from '../../lib/utils'
 import { useTransferStore, type TransferItem } from '../../stores/transferStore'
@@ -224,27 +224,40 @@ export const TransferRow = React.memo(function TransferRow({ transfer }: Transfe
   )
 })
 
-/** Sub-file list with batch selection support */
+/** Sub-file list with virtual scrolling and batch selection */
+const ITEM_HEIGHT = 26
+const CONTAINER_HEIGHT = 200
+const OVERSCAN = 5
+
 function SubFileList({ transfer }: { transfer: TransferItem }) {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const lastClickedIdx = useRef<number | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+
+  const subFiles = transfer.subFiles!
 
   // Only queued files can be selected for skipping
-  const queuedIndices = transfer.subFiles!
-    .filter(sf => sf.status === 'queued')
-    .map(sf => sf.index)
+  const queuedIndices = useMemo(
+    () => subFiles.filter(sf => sf.status === 'queued').map(sf => sf.index),
+    [subFiles]
+  )
+
+  const handleScroll = useCallback(() => {
+    if (scrollRef.current) {
+      setScrollTop(scrollRef.current.scrollTop)
+    }
+  }, [])
 
   const handleRowClick = useCallback((sfIndex: number, e: React.MouseEvent) => {
     e.stopPropagation()
-    // Only allow selecting queued files
-    const sf = transfer.subFiles!.find(f => f.index === sfIndex)
+    const sf = subFiles.find(f => f.index === sfIndex)
     if (!sf || sf.status !== 'queued') return
 
     setSelected(prev => {
       const next = new Set(prev)
 
       if (e.shiftKey && lastClickedIdx.current !== null) {
-        // Range select: from lastClicked to current
         const from = lastClickedIdx.current
         const to = sfIndex
         const lo = Math.min(from, to)
@@ -255,7 +268,6 @@ function SubFileList({ transfer }: { transfer: TransferItem }) {
           }
         }
       } else {
-        // Toggle single
         if (next.has(sfIndex)) {
           next.delete(sfIndex)
         } else {
@@ -266,7 +278,7 @@ function SubFileList({ transfer }: { transfer: TransferItem }) {
       lastClickedIdx.current = sfIndex
       return next
     })
-  }, [transfer.subFiles, queuedIndices])
+  }, [subFiles, queuedIndices])
 
   const handleBatchSkip = useCallback(() => {
     const store = useTransferStore.getState()
@@ -281,15 +293,22 @@ function SubFileList({ transfer }: { transfer: TransferItem }) {
     setSelected(new Set(queuedIndices))
   }, [queuedIndices])
 
-  const completedCount = transfer.subFiles!.filter(f => f.status === 'completed').length
-  const skippedCount = transfer.subFiles!.filter(f => f.status === 'skipped').length
+  const completedCount = useMemo(() => subFiles.filter(f => f.status === 'completed').length, [subFiles])
+  const skippedCount = useMemo(() => subFiles.filter(f => f.status === 'skipped').length, [subFiles])
+
+  // Virtual scroll calculations
+  const totalHeight = subFiles.length * ITEM_HEIGHT
+  const startIdx = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN)
+  const endIdx = Math.min(subFiles.length, Math.ceil((scrollTop + CONTAINER_HEIGHT) / ITEM_HEIGHT) + OVERSCAN)
+  const visibleFiles = subFiles.slice(startIdx, endIdx)
+  const offsetY = startIdx * ITEM_HEIGHT
 
   return (
-    <div className="mt-2 pl-4 pr-1 max-h-[200px] overflow-y-auto space-y-0.5">
+    <div className="mt-2 pl-4 pr-1">
       {/* Header with stats and batch actions */}
       <div className="flex items-center justify-between text-[10px] text-muted-foreground pb-1 border-b border-border/20 mb-1">
         <span>
-          共 {transfer.subFiles!.length} 个文件
+          共 {subFiles.length} 个文件
           {completedCount > 0 && (
             <span className="text-green-500 ml-2">✓ {completedCount}</span>
           )}
@@ -329,77 +348,106 @@ function SubFileList({ transfer }: { transfer: TransferItem }) {
         </div>
       </div>
 
-      {/* File rows */}
-      {transfer.subFiles!.map((sf) => {
-        const isSFActive = sf.status === 'active'
-        const isSFCompleted = sf.status === 'completed'
-        const isSFQueued = sf.status === 'queued'
-        const isSFFailed = sf.status === 'failed'
-        const isSFSkipped = sf.status === 'skipped'
-        const isSelected = selected.has(sf.index)
-
-        return (
-          <div
-            key={sf.index}
-            onClick={(e) => handleRowClick(sf.index, e)}
-            className={`flex items-center text-[10px] rounded px-2 py-1 transition-colors ${isSelected ? 'bg-primary/15 ring-1 ring-primary/40' :
-                isSFActive ? 'bg-blue-500/10 text-blue-300' :
-                  isSFCompleted ? 'bg-green-500/5 text-muted-foreground' :
-                    isSFSkipped ? 'bg-yellow-500/5 text-muted-foreground line-through opacity-50' :
-                      isSFFailed ? 'bg-red-500/10 text-destructive' :
-                        'bg-accent/20 text-muted-foreground'
-              } ${isSFQueued ? 'cursor-pointer hover:bg-accent/40' : ''}`}
-          >
-            {/* Checkbox / Status dot */}
-            {isSFQueued ? (
-              <span className={`w-3 h-3 rounded border shrink-0 mr-2 flex items-center justify-center ${isSelected ? 'border-primary bg-primary/20' : 'border-muted-foreground/30'
-                }`}>
-                {isSelected && <Check className="w-2 h-2 text-primary" />}
-              </span>
-            ) : (
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 mr-2 ${isSFActive ? 'bg-blue-400 animate-pulse' :
-                  isSFCompleted ? 'bg-green-500' :
-                    isSFSkipped ? 'bg-yellow-500' :
-                      isSFFailed ? 'bg-red-500' :
-                        'bg-muted-foreground/30'
-                }`} />
-            )}
-
-            {/* Filename */}
-            <span className="truncate flex-1" title={sf.remotePath}>{sf.filename}</span>
-
-            {/* Size */}
-            <span className="shrink-0 ml-2 tabular-nums">{formatBytes(sf.size)}</span>
-
-            {/* Status label */}
-            <span className="w-14 text-right shrink-0 ml-2">
-              {isSFActive && <span className="text-blue-400">下载中</span>}
-              {isSFCompleted && <span className="text-green-500">已完成</span>}
-              {isSFQueued && <span>等待中</span>}
-              {isSFFailed && <span className="text-destructive">失败</span>}
-              {isSFSkipped && <span className="text-yellow-500">已跳过</span>}
-            </span>
-
-            {/* Action: Skip button for queued files */}
-            <div className="w-5 shrink-0 ml-1 flex justify-center">
-              {isSFQueued && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    window.api.sftp.skipFile(transfer.id, sf.index)
-                    useTransferStore.getState().setSubFileStatus(transfer.id, sf.index, 'skipped')
-                    setSelected(prev => { const n = new Set(prev); n.delete(sf.index); return n })
-                  }}
-                  className="p-0.5 hover:bg-accent rounded transition-colors"
-                  title="跳过此文件"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              )}
-            </div>
+      {/* Virtualized file rows */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="overflow-y-auto"
+        style={{ maxHeight: CONTAINER_HEIGHT }}
+      >
+        <div style={{ height: totalHeight, position: 'relative' }}>
+          <div style={{ position: 'absolute', top: offsetY, left: 0, right: 0 }}>
+            {visibleFiles.map((sf) => (
+              <SubFileRow
+                key={sf.index}
+                sf={sf}
+                isSelected={selected.has(sf.index)}
+                transferId={transfer.id}
+                onRowClick={handleRowClick}
+                onSetSelected={setSelected}
+              />
+            ))}
           </div>
-        )
-      })}
+        </div>
+      </div>
     </div>
   )
 }
+
+/** Single sub-file row — extracted for perf */
+const SubFileRow = React.memo(function SubFileRow({
+  sf,
+  isSelected,
+  transferId,
+  onRowClick,
+  onSetSelected
+}: {
+  sf: { index: number; filename: string; remotePath: string; size: number; status: string }
+  isSelected: boolean
+  transferId: string
+  onRowClick: (idx: number, e: React.MouseEvent) => void
+  onSetSelected: React.Dispatch<React.SetStateAction<Set<number>>>
+}) {
+  const isSFActive = sf.status === 'active'
+  const isSFCompleted = sf.status === 'completed'
+  const isSFQueued = sf.status === 'queued'
+  const isSFFailed = sf.status === 'failed'
+  const isSFSkipped = sf.status === 'skipped'
+
+  return (
+    <div
+      onClick={(e) => onRowClick(sf.index, e)}
+      style={{ height: ITEM_HEIGHT }}
+      className={`flex items-center text-[10px] rounded px-2 transition-colors ${isSelected ? 'bg-primary/15 ring-1 ring-primary/40' :
+          isSFActive ? 'bg-blue-500/10 text-blue-300' :
+            isSFCompleted ? 'bg-green-500/5 text-muted-foreground' :
+              isSFSkipped ? 'bg-yellow-500/5 text-muted-foreground line-through opacity-50' :
+                isSFFailed ? 'bg-red-500/10 text-destructive' :
+                  'bg-accent/20 text-muted-foreground'
+        } ${isSFQueued ? 'cursor-pointer hover:bg-accent/40' : ''}`}
+    >
+      {/* Checkbox / Status dot */}
+      {isSFQueued ? (
+        <span className={`w-3 h-3 rounded border shrink-0 mr-2 flex items-center justify-center ${isSelected ? 'border-primary bg-primary/20' : 'border-muted-foreground/30'
+          }`}>
+          {isSelected && <Check className="w-2 h-2 text-primary" />}
+        </span>
+      ) : (
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 mr-2 ${isSFActive ? 'bg-blue-400 animate-pulse' :
+            isSFCompleted ? 'bg-green-500' :
+              isSFSkipped ? 'bg-yellow-500' :
+                isSFFailed ? 'bg-red-500' :
+                  'bg-muted-foreground/30'
+          }`} />
+      )}
+
+      <span className="truncate flex-1" title={sf.remotePath}>{sf.filename}</span>
+      <span className="shrink-0 ml-2 tabular-nums">{formatBytes(sf.size)}</span>
+
+      <span className="w-14 text-right shrink-0 ml-2">
+        {isSFActive && <span className="text-blue-400">下载中</span>}
+        {isSFCompleted && <span className="text-green-500">已完成</span>}
+        {isSFQueued && <span>等待中</span>}
+        {isSFFailed && <span className="text-destructive">失败</span>}
+        {isSFSkipped && <span className="text-yellow-500">已跳过</span>}
+      </span>
+
+      <div className="w-5 shrink-0 ml-1 flex justify-center">
+        {isSFQueued && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              window.api.sftp.skipFile(transferId, sf.index)
+              useTransferStore.getState().setSubFileStatus(transferId, sf.index, 'skipped')
+              onSetSelected(prev => { const n = new Set(prev); n.delete(sf.index); return n })
+            }}
+            className="p-0.5 hover:bg-accent rounded transition-colors"
+            title="跳过此文件"
+          >
+            <X className="w-2.5 h-2.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+})

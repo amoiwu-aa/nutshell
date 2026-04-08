@@ -147,6 +147,12 @@ const api = {
         callback(transferId, fileIndex, status)
       ipcRenderer.on('sftp:fileStatus', handler)
       return () => ipcRenderer.removeListener('sftp:fileStatus', handler)
+    },
+    onFileStatusBatch: (callback: (batch: { id: string; fileIdx: number; status: string }[]) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, batch: { id: string; fileIdx: number; status: string }[]) =>
+        callback(batch)
+      ipcRenderer.on('sftp:fileStatusBatch', handler)
+      return () => ipcRenderer.removeListener('sftp:fileStatusBatch', handler)
     }
   },
 
@@ -201,6 +207,10 @@ const api = {
       containerId: string,
       options?: { tail?: number | 'all'; since?: string; until?: string }
     ) => ipcRenderer.invoke('docker:containerLogs', sessionId, containerId, options),
+    startLogStream: (sessionId: string, containerId: string) =>
+      ipcRenderer.invoke('docker:startLogStream', sessionId, containerId),
+    stopLogStream: (containerId: string) =>
+      ipcRenderer.invoke('docker:stopLogStream', containerId),
     containerExec: (sessionId: string, containerId: string) =>
       ipcRenderer.invoke('docker:containerExec', sessionId, containerId),
     pullImage: (sessionId: string, image: string) =>
@@ -340,52 +350,6 @@ const api = {
       ipcRenderer.invoke('workspace:agentWriteFile', sessionId, filePath, content),
     agentRunCommand: (sessionId: string, rootPath: string, command: string) =>
       ipcRenderer.invoke('workspace:agentRunCommand', sessionId, rootPath, command)
-  },
-
-  // LSP (Language Server Protocol)
-  lsp: {
-    start: (sessionId: string, rootPath: string, language: string) =>
-      ipcRenderer.invoke('lsp:start', sessionId, rootPath, language),
-    stop: (sessionId: string, language: string) =>
-      ipcRenderer.invoke('lsp:stop', sessionId, language),
-    stopAll: (sessionId: string) =>
-      ipcRenderer.invoke('lsp:stopAll', sessionId),
-    request: (sessionId: string, language: string, method: string, params: any) =>
-      ipcRenderer.invoke('lsp:request', sessionId, language, method, params),
-    notify: (sessionId: string, language: string, method: string, params: any) =>
-      ipcRenderer.invoke('lsp:notify', sessionId, language, method, params),
-    checkAvailability: (sessionId: string, language: string) =>
-      ipcRenderer.invoke('lsp:checkAvailability', sessionId, language),
-    detectServers: (sessionId: string, rootPath: string) =>
-      ipcRenderer.invoke('lsp:detectServers', sessionId, rootPath),
-    getRunning: (sessionId: string) =>
-      ipcRenderer.invoke('lsp:getRunning', sessionId),
-    didOpen: (sessionId: string, language: string, uri: string, languageId: string, version: number, text: string) =>
-      ipcRenderer.invoke('lsp:didOpen', sessionId, language, uri, languageId, version, text),
-    didChange: (sessionId: string, language: string, uri: string, version: number, text: string) =>
-      ipcRenderer.invoke('lsp:didChange', sessionId, language, uri, version, text),
-    didClose: (sessionId: string, language: string, uri: string) =>
-      ipcRenderer.invoke('lsp:didClose', sessionId, language, uri),
-    didSave: (sessionId: string, language: string, uri: string, text: string) =>
-      ipcRenderer.invoke('lsp:didSave', sessionId, language, uri, text),
-    onDiagnostics: (callback: (sessionId: string, language: string, params: any) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, sessionId: string, language: string, params: any) =>
-        callback(sessionId, language, params)
-      ipcRenderer.on('lsp:diagnostics', handler)
-      return () => ipcRenderer.removeListener('lsp:diagnostics', handler)
-    },
-    onStatus: (callback: (sessionId: string, language: string, status: string) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, sessionId: string, language: string, status: string) =>
-        callback(sessionId, language, status)
-      ipcRenderer.on('lsp:status', handler)
-      return () => ipcRenderer.removeListener('lsp:status', handler)
-    },
-    onLog: (callback: (sessionId: string, language: string, message: string) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, sessionId: string, language: string, message: string) =>
-        callback(sessionId, language, message)
-      ipcRenderer.on('lsp:log', handler)
-      return () => ipcRenderer.removeListener('lsp:log', handler)
-    }
   },
 
   // File utilities (Electron 32+ requires webUtils for drag-drop file paths)

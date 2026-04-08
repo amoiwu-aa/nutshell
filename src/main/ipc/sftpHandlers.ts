@@ -2,11 +2,26 @@ import { ipcMain, dialog, BrowserWindow, app } from 'electron'
 import path from 'path'
 import { sftpManager } from '../ssh/SFTPManager'
 import { sshManager } from '../ssh/SSHManager'
+import { rustCoreService } from '../rust/RustCoreService'
+import { rustRemoteFS } from '../rust/RustRemoteFS'
+
+function getRemoteFs(sessionId: string) {
+  return resolveRemoteSession(sessionId).usesRustFs ? rustRemoteFS : sftpManager
+}
+
+function resolveRemoteSession(sessionId: string): { remoteSessionId: string; usesRustFs: boolean } {
+  if (rustCoreService.hasManagedSshSession(sessionId)) {
+    return { remoteSessionId: sessionId, usesRustFs: true }
+  }
+
+  return { remoteSessionId: sessionId, usesRustFs: false }
+}
 
 export function registerSFTPHandlers(): void {
   ipcMain.handle('sftp:list', async (_event, sessionId: string, remotePath: string) => {
     try {
-      const files = await sftpManager.list(sessionId, remotePath)
+      const { remoteSessionId } = resolveRemoteSession(sessionId)
+      const files = await getRemoteFs(sessionId).list(remoteSessionId, remotePath)
       return { success: true, files }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -17,7 +32,8 @@ export function registerSFTPHandlers(): void {
     'sftp:upload',
     async (_event, sessionId: string, localPath: string, remotePath: string) => {
       try {
-        await sftpManager.upload(sessionId, localPath, remotePath)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).upload(remoteSessionId, localPath, remotePath)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -29,7 +45,8 @@ export function registerSFTPHandlers(): void {
     'sftp:download',
     async (_event, sessionId: string, remotePath: string, localPath: string) => {
       try {
-        await sftpManager.download(sessionId, remotePath, localPath)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).download(remoteSessionId, remotePath, localPath)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -39,7 +56,8 @@ export function registerSFTPHandlers(): void {
 
   ipcMain.handle('sftp:mkdir', async (_event, sessionId: string, remotePath: string) => {
     try {
-      await sftpManager.mkdir(sessionId, remotePath)
+      const { remoteSessionId } = resolveRemoteSession(sessionId)
+      await getRemoteFs(sessionId).mkdir(remoteSessionId, remotePath)
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -48,7 +66,8 @@ export function registerSFTPHandlers(): void {
 
   ipcMain.handle('sftp:delete', async (_event, sessionId: string, remotePath: string) => {
     try {
-      await sftpManager.deleteFile(sessionId, remotePath)
+      const { remoteSessionId } = resolveRemoteSession(sessionId)
+      await getRemoteFs(sessionId).deleteFile(remoteSessionId, remotePath)
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -59,7 +78,8 @@ export function registerSFTPHandlers(): void {
     'sftp:rename',
     async (_event, sessionId: string, oldPath: string, newPath: string) => {
       try {
-        await sftpManager.rename(sessionId, oldPath, newPath)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).rename(remoteSessionId, oldPath, newPath)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -69,7 +89,8 @@ export function registerSFTPHandlers(): void {
 
   ipcMain.handle('sftp:readFile', async (_event, sessionId: string, remotePath: string) => {
     try {
-      const content = await sftpManager.readFile(sessionId, remotePath)
+      const { remoteSessionId } = resolveRemoteSession(sessionId)
+      const content = await getRemoteFs(sessionId).readFile(remoteSessionId, remotePath)
       return { success: true, content }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -80,7 +101,8 @@ export function registerSFTPHandlers(): void {
     'sftp:writeFile',
     async (_event, sessionId: string, remotePath: string, content: string) => {
       try {
-        await sftpManager.writeFile(sessionId, remotePath, content)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).writeFile(remoteSessionId, remotePath, content)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -90,7 +112,8 @@ export function registerSFTPHandlers(): void {
 
   ipcMain.handle('sftp:stat', async (_event, sessionId: string, remotePath: string) => {
     try {
-      const stat = await sftpManager.stat(sessionId, remotePath)
+      const { remoteSessionId } = resolveRemoteSession(sessionId)
+      const stat = await getRemoteFs(sessionId).stat(remoteSessionId, remotePath)
       return { success: true, stat }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -101,7 +124,8 @@ export function registerSFTPHandlers(): void {
     'sftp:chmod',
     async (_event, sessionId: string, remotePath: string, mode: string) => {
       try {
-        await sftpManager.chmod(sessionId, remotePath, mode)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).chmod(remoteSessionId, remotePath, mode)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -114,7 +138,8 @@ export function registerSFTPHandlers(): void {
     'sftp:uploadWithId',
     async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string, resumeOffset?: number) => {
       try {
-        await sftpManager.upload(sessionId, localPath, remotePath, transferId, resumeOffset || 0)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).upload(remoteSessionId, localPath, remotePath, transferId, resumeOffset || 0)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -127,7 +152,8 @@ export function registerSFTPHandlers(): void {
     'sftp:uploadDir',
     async (_event, sessionId: string, localPath: string, remotePath: string, transferId: string) => {
       try {
-        await sftpManager.uploadDir(sessionId, localPath, remotePath, transferId)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).uploadDir(remoteSessionId, localPath, remotePath, transferId)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -138,8 +164,10 @@ export function registerSFTPHandlers(): void {
   // Enhanced download with transferId — auto-detects directories
   ipcMain.handle(
     'sftp:downloadWithId',
-    async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
+    async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string, resumeOffset?: number) => {
       try {
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        const remoteFs = getRemoteFs(sessionId)
         let dest = localPath
         // If localPath is empty, derive it from Downloads folder + remote filename
         if (!dest) {
@@ -151,7 +179,7 @@ export function registerSFTPHandlers(): void {
         // Check if remote path is a directory
         let isDir = false
         try {
-          const stat = await sftpManager.stat(sessionId, remotePath)
+          const stat = await remoteFs.stat(remoteSessionId, remotePath)
           // S_IFDIR = 0o040000 = 16384
           isDir = (stat.mode & 0o170000) === 0o040000
         } catch {
@@ -159,9 +187,9 @@ export function registerSFTPHandlers(): void {
         }
 
         if (isDir) {
-          await sftpManager.downloadDir(sessionId, remotePath, dest, transferId)
+          await remoteFs.downloadDir(remoteSessionId, remotePath, dest, transferId)
         } else {
-          await sftpManager.download(sessionId, remotePath, dest, transferId)
+          await remoteFs.download(remoteSessionId, remotePath, dest, transferId, resumeOffset || 0)
         }
         return { success: true, localPath: dest }
       } catch (error: any) {
@@ -175,7 +203,8 @@ export function registerSFTPHandlers(): void {
     'sftp:downloadDir',
     async (_event, sessionId: string, remotePath: string, localPath: string, transferId: string) => {
       try {
-        await sftpManager.downloadDir(sessionId, remotePath, localPath, transferId)
+        const { remoteSessionId } = resolveRemoteSession(sessionId)
+        await getRemoteFs(sessionId).downloadDir(remoteSessionId, remotePath, localPath, transferId)
         return { success: true }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -185,20 +214,21 @@ export function registerSFTPHandlers(): void {
 
   // Cancel a transfer
   ipcMain.handle('sftp:cancelTransfer', async (_event, transferId: string) => {
-    const cancelled = sftpManager.cancelTransfer(transferId)
+    const cancelled = sftpManager.cancelTransfer(transferId) || rustRemoteFS.cancelTransfer(transferId)
     return { success: cancelled }
   })
 
   // Skip a sub-file in a directory transfer
   ipcMain.handle('sftp:skipFile', async (_event, transferId: string, fileIndex: number) => {
-    const skipped = sftpManager.skipFile(transferId, fileIndex)
+    const skipped = sftpManager.skipFile(transferId, fileIndex) || rustRemoteFS.skipFile(transferId, fileIndex)
     return { success: skipped }
   })
 
   // Get remote file size (for resume)
   ipcMain.handle('sftp:getRemoteFileSize', async (_event, sessionId: string, remotePath: string) => {
     try {
-      const size = await sftpManager.getRemoteFileSize(sessionId, remotePath)
+      const { remoteSessionId } = resolveRemoteSession(sessionId)
+      const size = await getRemoteFs(sessionId).getRemoteFileSize(remoteSessionId, remotePath)
       return { success: true, size }
     } catch (error: any) {
       return { success: false, error: error.message, size: 0 }
@@ -207,7 +237,7 @@ export function registerSFTPHandlers(): void {
 
   ipcMain.handle('sftp:listLocal', async (_event, localPath: string) => {
     try {
-      const files = await sftpManager.listLocal(localPath)
+      const files = await rustRemoteFS.listLocal(localPath)
       return { success: true, files }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -216,7 +246,7 @@ export function registerSFTPHandlers(): void {
 
   ipcMain.handle('sftp:statLocal', async (_event, localPath: string) => {
     try {
-      const info = await sftpManager.statLocal(localPath)
+      const info = await rustRemoteFS.statLocal(localPath)
       return { success: true, ...info }
     } catch (error: any) {
       return { success: false, error: error.message, exists: false, isDirectory: false, size: 0 }
@@ -224,12 +254,15 @@ export function registerSFTPHandlers(): void {
   })
 
   ipcMain.handle('sftp:getHomeDir', async () => {
-    return sftpManager.getHomeDir()
+    return rustRemoteFS.getHomeDir()
   })
 
   ipcMain.handle('sftp:getRemoteHomeDir', async (_event, sessionId: string) => {
     try {
-      const home = await sshManager.getRemoteHomeDir(sessionId)
+      const { remoteSessionId, usesRustFs } = resolveRemoteSession(sessionId)
+      const home = usesRustFs
+        ? await rustRemoteFS.getRemoteHomeDir(remoteSessionId)
+        : await sshManager.getRemoteHomeDir(remoteSessionId)
       return { success: true, home }
     } catch (error: any) {
       return { success: false, error: error.message, home: '/' }

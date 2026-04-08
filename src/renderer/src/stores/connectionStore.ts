@@ -20,12 +20,14 @@ export interface Tab {
   id: string
   connectionId: string
   sessionId: string
+  parentSessionId?: string
   name: string
   type: 'terminal' | 'sftp' | 'monitor' | 'docker' | 'workspace' | 'editor'
   engine?: 'node' | 'rust'
   workspacePath?: string
   filePath?: string
   fileName?: string
+  dockerContainerId?: string
   connected: boolean
 }
 
