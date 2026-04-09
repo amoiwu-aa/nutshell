@@ -385,7 +385,8 @@ const api = {
     scanProject: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:scanProject', params),
     projectSummary: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:projectSummary', params),
     nativeUpload: (params: { sessionId: string; transferId: string; localPath: string; remotePath: string }) => ipcRenderer.invoke('rustCore:nativeUpload', params),
-    nativeDownload: (params: { sessionId: string; transferId: string; localPath: string; remotePath: string }) => ipcRenderer.invoke('rustCore:nativeDownload', params)
+    nativeDownload: (params: { sessionId: string; transferId: string; localPath: string; remotePath: string }) => ipcRenderer.invoke('rustCore:nativeDownload', params),
+    cancelNativeTransfer: (params: { sessionId: string; transferId: string }) => ipcRenderer.invoke('rustCore:cancelNativeTransfer', params)
   },
 
   // Config store

@@ -119,7 +119,7 @@ class RustRemoteFS {
       this.activeTransfers.set(id, {
         abort: () => {
           cancelled = true
-          // Native transfer cannot be aborted midway yet, but we mark it
+          rustCoreService.cancelNativeTransfer({ sessionId, transferId: id }).catch(() => {})
         }
       })
 
@@ -153,6 +153,7 @@ class RustRemoteFS {
       this.activeTransfers.set(id, {
         abort: () => {
           cancelled = true
+          rustCoreService.cancelNativeTransfer({ sessionId, transferId: id }).catch(() => {})
         }
       })
 

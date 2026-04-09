@@ -15,6 +15,7 @@ use protocol::{
     ProjectRootParams, ReadBinaryFileParams, ReadFileParams, ReadMultipleFilesParams,
     RemovePathParams, ResizeParams, RunCommandParams, SearchParams, SessionIdParams,
     SshConnectParams, StatPathParams, WriteBinaryFileParams, WriteFileParams, WriteParams,
+    CancelNativeTransferParams,
 };
 use russh::client::{self, Handle, Msg};
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
@@ -34,6 +35,11 @@ type StreamTasks = Arc<Mutex<HashMap<String, Arc<tokio::task::JoinHandle<()>>>>>
 enum OutputMessage {
     Event(CoreEvent),
     Response(CoreResponse),
+}
+
+fn get_cancellations() -> Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>> {
+    static CANCELLATIONS: std::sync::OnceLock<Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>> = std::sync::OnceLock::new();
+    CANCELLATIONS.get_or_init(|| Arc::new(std::sync::Mutex::new(HashMap::new()))).clone()
 }
 
 struct RustSshSession {
@@ -683,6 +689,23 @@ async fn handle_request(request: CoreRequest, sessions: Sessions, sftp_cache: Sf
                 Ok(result) => CoreResponse::success(request.id, result),
                 Err(error) => CoreResponse::error(request.id, "tool_native_download_failed", format!("{error:#}")),
             }
+        }
+        "tool.cancelNativeTransfer" => {
+            let params: CancelNativeTransferParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => return CoreResponse::error(request.id, "invalid_params", format!("Failed to decode cancel: {error}")),
+            };
+            
+            let map = get_cancellations();
+            let mut guard = map.lock().unwrap();
+            if let Some(flag) = guard.get(&params.transfer_id) {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                let flag = Arc::new(std::sync::atomic::AtomicBool::new(true));
+                guard.insert(params.transfer_id.clone(), flag);
+            }
+            
+            CoreResponse::success(request.id, json!({ "success": true }))
         }
         _ => CoreResponse::error(
             request.id,
@@ -1377,11 +1400,30 @@ async fn native_upload(
             | russh_sftp::protocol::OpenFlags::READ,
     ).await?;
 
+    let map = get_cancellations();
+    let cancel_flag = {
+        let mut guard = map.lock().unwrap();
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        guard.insert(params.transfer_id.clone(), flag.clone());
+        flag
+    };
+
     let mut transferred = 0u64;
     let mut buffer = vec![0; 512 * 1024]; // 512KB chunk
     let mut last_report = tokio::time::Instant::now();
 
     loop {
+        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            output_tx.send(OutputMessage::Event(CoreEvent::NativeTransferProgress {
+                transfer_id: params.transfer_id.clone(),
+                transferred,
+                total: total_size,
+                status: "error".to_string(),
+                error: Some("Transfer cancelled by user".to_string()),
+            })).ok();
+            return Err(anyhow!("Transfer cancelled by user"));
+        }
+
         let n = TokioAsyncReadExt::read(&mut local_file, &mut buffer).await?;
         if n == 0 {
             break;
@@ -1413,6 +1455,8 @@ async fn native_upload(
         error: None,
     })).ok();
 
+    get_cancellations().lock().unwrap().remove(&params.transfer_id);
+
     Ok(json!({ "success": true }))
 }
 
@@ -1433,11 +1477,34 @@ async fn native_download(
     }
     let mut local_file = tokio::fs::File::create(&params.local_path).await?;
     
+    let map = get_cancellations();
+    let cancel_flag = {
+        let mut guard = map.lock().unwrap();
+        // If it was already marked as canceled before starting
+        if guard.get(&params.transfer_id).map(|f| f.load(std::sync::atomic::Ordering::Relaxed)).unwrap_or(false) {
+            return Err(anyhow!("Transfer cancelled before start"));
+        }
+        let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        guard.insert(params.transfer_id.clone(), flag.clone());
+        flag
+    };
+
     let mut transferred = 0u64;
     let mut buffer = vec![0; 512 * 1024]; // 512KB chunk
     let mut last_report = tokio::time::Instant::now();
 
     loop {
+        if cancel_flag.load(std::sync::atomic::Ordering::Relaxed) {
+             output_tx.send(OutputMessage::Event(CoreEvent::NativeTransferProgress {
+                 transfer_id: params.transfer_id.clone(),
+                 transferred,
+                 total: total_size,
+                 status: "error".to_string(),
+                 error: Some("Transfer cancelled by user".to_string()),
+             })).ok();
+             return Err(anyhow!("Transfer cancelled by user"));
+        }
+
         let n = TokioAsyncReadExt::read(&mut remote_file, &mut buffer).await?;
         if n == 0 {
             break;
@@ -1468,6 +1535,8 @@ async fn native_download(
         status: "completed".to_string(),
         error: None,
     })).ok();
+
+    get_cancellations().lock().unwrap().remove(&params.transfer_id);
 
     Ok(json!({ "success": true }))
 }

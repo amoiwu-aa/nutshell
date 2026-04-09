@@ -111,6 +111,12 @@ pub struct NativeTransferParams {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CancelNativeTransferParams {
+    pub session_id: String,
+    pub transfer_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MkdirParams {
     pub session_id: String,
     pub path: String,

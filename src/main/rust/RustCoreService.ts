@@ -432,6 +432,13 @@ class RustCoreService {
     }, 0) // No timeout
   }
 
+  async cancelNativeTransfer(params: { sessionId: string; transferId: string }): Promise<{ success: boolean }> {
+    return this.request('tool.cancelNativeTransfer', {
+      session_id: params.sessionId,
+      transfer_id: params.transferId
+    }, 5000)
+  }
+
   async statPath(params: RustStatPathParams): Promise<any> {
     return this.request('tool.statPath', {
       session_id: params.sessionId,

@@ -139,10 +139,33 @@ export function registerRustCoreHandlers(): void {
 
   ipcMain.handle('rustCore:projectSummary', async (_event, params) => {
     try {
-      const result = await rustCoreService.projectSummary(params)
-      return { success: true, result }
+      return await rustCoreService.projectSummary(params)
     } catch (error: any) {
-      return { success: false, error: error.message }
+      throw new Error(`Failed to get project summary via Rust core: ${error.message}`)
+    }
+  })
+
+  ipcMain.handle('rustCore:nativeUpload', async (_event, params) => {
+    try {
+      return await rustCoreService.nativeUpload(params)
+    } catch (error: any) {
+      throw new Error(`Failed to perform native upload: ${error.message}`)
+    }
+  })
+
+  ipcMain.handle('rustCore:nativeDownload', async (_event, params) => {
+    try {
+      return await rustCoreService.nativeDownload(params)
+    } catch (error: any) {
+      throw new Error(`Failed to perform native download: ${error.message}`)
+    }
+  })
+
+  ipcMain.handle('rustCore:cancelNativeTransfer', async (_event, params) => {
+    try {
+      return await rustCoreService.cancelNativeTransfer(params)
+    } catch (error: any) {
+      throw new Error(`Failed to cancel native transfer: ${error.message}`)
     }
   })
 }
