@@ -69,6 +69,14 @@ interface RustCoreExternalShellCloseEvent extends RustCoreEventBase {
   session_id: string
 }
 
+interface RustCoreNativeTransferProgressEvent extends RustCoreEventBase {
+  transfer_id: string
+  transferred: number
+  total: number
+  status: string
+  error?: string
+}
+
 type RustCoreEvent =
   | RustCoreReadyEvent
   | RustCoreLogEvent
@@ -78,6 +86,7 @@ type RustCoreEvent =
   | RustCorePortForwardStatusEvent
   | RustCoreDockerLogsEvent
   | RustCoreExternalShellCloseEvent
+  | RustCoreNativeTransferProgressEvent
 
 export interface RustSshConnectConfig {
   sessionId: string
@@ -199,6 +208,13 @@ export interface RustDockerLogStreamParams {
   sessionId: string
   containerId: string
   tail?: string
+}
+
+export interface RustNativeTransferParams {
+  sessionId: string
+  transferId: string
+  localPath: string
+  remotePath: string
 }
 
 class RustCoreService {
@@ -398,6 +414,24 @@ class RustCoreService {
     }, 60000)
   }
 
+  async nativeUpload(params: RustNativeTransferParams): Promise<{ success: boolean }> {
+    return this.request('tool.nativeUpload', {
+      session_id: params.sessionId,
+      transfer_id: params.transferId,
+      local_path: params.localPath,
+      remote_path: params.remotePath
+    }, 0) // No timeout for bulk transfers
+  }
+
+  async nativeDownload(params: RustNativeTransferParams): Promise<{ success: boolean }> {
+    return this.request('tool.nativeDownload', {
+      session_id: params.sessionId,
+      transfer_id: params.transferId,
+      local_path: params.localPath,
+      remote_path: params.remotePath
+    }, 0) // No timeout
+  }
+
   async statPath(params: RustStatPathParams): Promise<any> {
     return this.request('tool.statPath', {
       session_id: params.sessionId,
@@ -578,23 +612,26 @@ class RustCoreService {
     const paramSummary = this.summarizeParams(params)
 
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        const error = new Error(`Rust core request timed out: ${method} (id=${id}, timeout=${timeoutMs}ms, activeSessions=${this.getActiveSessionIds().length}, params=${paramSummary})`)
-        console.warn('[rust-core] request timeout', {
-          id,
-          method,
-          timeoutMs,
-          activeSessions: this.getActiveSessionIds().length,
-          params: paramSummary
-        })
-        reject(error)
-      }, timeoutMs)
+      let timer: NodeJS.Timeout | undefined;
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          this.pending.delete(id)
+          const error = new Error(`Rust core request timed out: ${method} (id=${id}, timeout=${timeoutMs}ms, activeSessions=${this.getActiveSessionIds().length}, params=${paramSummary})`)
+          console.warn('[rust-core] request timeout', {
+            id,
+            method,
+            timeoutMs,
+            activeSessions: this.getActiveSessionIds().length,
+            params: paramSummary
+          })
+          reject(error)
+        }, timeoutMs)
+      }
 
-      this.pending.set(id, { resolve, reject, timer })
+      this.pending.set(id, { resolve, reject, timer: timer as NodeJS.Timeout })
       processRef.stdin.write(payload, (error) => {
         if (error) {
-          clearTimeout(timer)
+          if (timer) clearTimeout(timer)
           this.pending.delete(id)
           reject(error)
         }
@@ -696,6 +733,11 @@ class RustCoreService {
 
     if ('rule_id' in message && 'status' in message) {
       this.broadcast('portForward:status', message.rule_id, message.status)
+      return
+    }
+
+    if ('transfer_id' in message && 'transferred' in message && 'total' in message) {
+      this.broadcast('sftp:progress', message.transfer_id, message.transferred, message.total, '')
       return
     }
 

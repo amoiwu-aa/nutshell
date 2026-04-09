@@ -652,6 +652,38 @@ async fn handle_request(request: CoreRequest, sessions: Sessions, sftp_cache: Sf
                 Err(error) => CoreResponse::error(request.id, "tool_monitor_snapshot_failed", format!("{error:#}")),
             }
         }
+        "tool.nativeUpload" => {
+            let params: protocol::NativeTransferParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    return CoreResponse::error(
+                        request.id,
+                        "invalid_params",
+                        format!("Failed to decode tool.nativeUpload params: {error}"),
+                    )
+                }
+            };
+            match native_upload(params, sessions, sftp_cache, output_tx.clone()).await {
+                Ok(result) => CoreResponse::success(request.id, result),
+                Err(error) => CoreResponse::error(request.id, "tool_native_upload_failed", format!("{error:#}")),
+            }
+        }
+        "tool.nativeDownload" => {
+            let params: protocol::NativeTransferParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(error) => {
+                    return CoreResponse::error(
+                        request.id,
+                        "invalid_params",
+                        format!("Failed to decode tool.nativeDownload params: {error}"),
+                    )
+                }
+            };
+            match native_download(params, sessions, sftp_cache, output_tx.clone()).await {
+                Ok(result) => CoreResponse::success(request.id, result),
+                Err(error) => CoreResponse::error(request.id, "tool_native_download_failed", format!("{error:#}")),
+            }
+        }
         _ => CoreResponse::error(
             request.id,
             "method_not_implemented",
@@ -1319,6 +1351,125 @@ async fn write_binary_file(
         "path": params.path,
         "written": content.len()
     }))
+}
+
+async fn native_upload(
+    params: protocol::NativeTransferParams,
+    sessions: Sessions,
+    sftp_cache: SftpCache,
+    output_tx: OutputSender,
+) -> anyhow::Result<serde_json::Value> {
+    let sftp = open_sftp_session(&params.session_id, sessions, sftp_cache).await?;
+    let mut local_file = tokio::fs::File::open(&params.local_path).await?;
+    let metadata = local_file.metadata().await?;
+    let total_size = metadata.len();
+    
+    // Auto create parent directory on remote
+    if let Some(parent) = Path::new(&params.remote_path).parent() {
+        create_dir_all_sftp(&sftp, parent).await.ok();
+    }
+    
+    let mut remote_file = sftp.open_with_flags(
+        params.remote_path.clone(),
+        russh_sftp::protocol::OpenFlags::CREATE
+            | russh_sftp::protocol::OpenFlags::TRUNCATE
+            | russh_sftp::protocol::OpenFlags::WRITE
+            | russh_sftp::protocol::OpenFlags::READ,
+    ).await?;
+
+    let mut transferred = 0u64;
+    let mut buffer = vec![0; 512 * 1024]; // 512KB chunk
+    let mut last_report = tokio::time::Instant::now();
+
+    loop {
+        let n = TokioAsyncReadExt::read(&mut local_file, &mut buffer).await?;
+        if n == 0 {
+            break;
+        }
+        
+        TokioAsyncWriteExt::write_all(&mut remote_file, &buffer[..n]).await?;
+        
+        transferred += n as u64;
+        
+        if last_report.elapsed().as_millis() > 200 {
+            output_tx.send(OutputMessage::Event(CoreEvent::NativeTransferProgress {
+                transfer_id: params.transfer_id.clone(),
+                transferred,
+                total: total_size,
+                status: "running".to_string(),
+                error: None,
+            })).ok();
+            last_report = tokio::time::Instant::now();
+        }
+    }
+    
+    TokioAsyncWriteExt::flush(&mut remote_file).await?;
+    
+    output_tx.send(OutputMessage::Event(CoreEvent::NativeTransferProgress {
+        transfer_id: params.transfer_id.clone(),
+        transferred,
+        total: total_size,
+        status: "completed".to_string(),
+        error: None,
+    })).ok();
+
+    Ok(json!({ "success": true }))
+}
+
+async fn native_download(
+    params: protocol::NativeTransferParams,
+    sessions: Sessions,
+    sftp_cache: SftpCache,
+    output_tx: OutputSender,
+) -> anyhow::Result<serde_json::Value> {
+    let sftp = open_sftp_session(&params.session_id, sessions, sftp_cache).await?;
+    let metadata = sftp.metadata(params.remote_path.clone()).await?;
+    let total_size = metadata.len();
+
+    let mut remote_file = sftp.open(params.remote_path.clone()).await?;
+    
+    if let Some(parent) = Path::new(&params.local_path).parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut local_file = tokio::fs::File::create(&params.local_path).await?;
+    
+    let mut transferred = 0u64;
+    let mut buffer = vec![0; 512 * 1024]; // 512KB chunk
+    let mut last_report = tokio::time::Instant::now();
+
+    loop {
+        let n = TokioAsyncReadExt::read(&mut remote_file, &mut buffer).await?;
+        if n == 0 {
+            break;
+        }
+        
+        TokioAsyncWriteExt::write_all(&mut local_file, &buffer[..n]).await?;
+        
+        transferred += n as u64;
+        
+        if last_report.elapsed().as_millis() > 200 {
+            output_tx.send(OutputMessage::Event(CoreEvent::NativeTransferProgress {
+                transfer_id: params.transfer_id.clone(),
+                transferred,
+                total: total_size,
+                status: "running".to_string(),
+                error: None,
+            })).ok();
+            last_report = tokio::time::Instant::now();
+        }
+    }
+    
+    TokioAsyncWriteExt::flush(&mut local_file).await?;
+    
+    output_tx.send(OutputMessage::Event(CoreEvent::NativeTransferProgress {
+        transfer_id: params.transfer_id.clone(),
+        transferred,
+        total: total_size,
+        status: "completed".to_string(),
+        error: None,
+    })).ok();
+
+    Ok(json!({ "success": true }))
 }
 
 async fn stat_path(params: StatPathParams, sessions: Sessions, sftp_cache: SftpCache) -> anyhow::Result<serde_json::Value> {

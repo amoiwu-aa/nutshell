@@ -383,7 +383,9 @@ const api = {
     movePath: (params: { sessionId: string; fromPath: string; toPath: string }) => ipcRenderer.invoke('rustCore:movePath', params),
     readMultipleFiles: (params: { sessionId: string; paths: string[]; maxBytesPerFile?: number }) => ipcRenderer.invoke('rustCore:readMultipleFiles', params),
     scanProject: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:scanProject', params),
-    projectSummary: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:projectSummary', params)
+    projectSummary: (params: { sessionId: string; rootPath: string }) => ipcRenderer.invoke('rustCore:projectSummary', params),
+    nativeUpload: (params: { sessionId: string; transferId: string; localPath: string; remotePath: string }) => ipcRenderer.invoke('rustCore:nativeUpload', params),
+    nativeDownload: (params: { sessionId: string; transferId: string; localPath: string; remotePath: string }) => ipcRenderer.invoke('rustCore:nativeDownload', params)
   },
 
   // Config store

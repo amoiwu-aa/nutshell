@@ -103,6 +103,14 @@ pub struct StatPathParams {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct NativeTransferParams {
+    pub session_id: String,
+    pub transfer_id: String,
+    pub local_path: String,
+    pub remote_path: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MkdirParams {
     pub session_id: String,
     pub path: String,
@@ -247,4 +255,12 @@ pub enum CoreEvent {
     DockerLogs { container_id: String, data: String },
     #[serde(rename = "event")]
     ExternalShellClose { session_id: String },
+    #[serde(rename = "event")]
+    NativeTransferProgress {
+        transfer_id: String,
+        transferred: u64,
+        total: u64,
+        status: String,
+        error: Option<String>,
+    },
 }

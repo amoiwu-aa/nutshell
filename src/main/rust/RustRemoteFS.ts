@@ -112,151 +112,66 @@ class RustRemoteFS {
       throw new Error('暂不支持直接上传文件夹，请选择文件而不是文件夹')
     }
 
-    const totalSize = stat.size
     const id = transferId || `${Date.now()}`
-    const startOffset = Math.max(0, Math.min(resumeOffset, totalSize))
 
     return new Promise((resolve, reject) => {
-      let settled = false
       let cancelled = false
-      let transferred = startOffset
-      const stream = fs.createReadStream(localPath, {
-        start: startOffset,
-        highWaterMark: BINARY_CHUNK_SIZE
-      })
-
-      const finish = (error?: Error) => {
-        if (settled) return
-        settled = true
-        this.activeTransfers.delete(id)
-        this.lastProgressTime.delete(id)
-        this.lastProgressTime.delete(id + '_timer')
-        this.pendingProgress.delete(id)
-        try { stream.destroy() } catch { /* ignore */ }
-        if (error) reject(error)
-        else resolve()
-      }
-
       this.activeTransfers.set(id, {
         abort: () => {
           cancelled = true
-          finish(new Error('Transfer cancelled'))
+          // Native transfer cannot be aborted midway yet, but we mark it
         }
       })
 
-      if (transferred > 0) {
-        this.notifyProgress(id, transferred, totalSize, basename(safePath))
-      }
-
-      stream.on('error', (error) => finish(error instanceof Error ? error : new Error(String(error))))
-
-      stream.on('data', (chunk) => {
-        stream.pause()
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-        void (async () => {
-          if (cancelled || !this.activeTransfers.has(id)) {
-            finish(new Error('Transfer cancelled'))
-            return
-          }
-          try {
-            await this.writeBinaryChunkWithRetry(sessionId, safePath, buffer, transferred > 0)
-            transferred += buffer.length
-            this.notifyProgress(id, transferred, totalSize, basename(safePath))
-            if (!cancelled) {
-              stream.resume()
-            }
-          } catch (error: any) {
-            finish(error instanceof Error ? error : new Error(error?.message || String(error)))
-          }
-        })()
-      })
-
-      stream.on('end', () => {
-        if (!cancelled) {
-          this.notifyProgress(id, totalSize, totalSize, basename(safePath))
-          finish()
-        }
-      })
+      // We rely on RustCoreService to emit sftp:nativeProgress which we could intercept,
+      // but for simplicity we rely on the promise resolution.
+      rustCoreService
+        .nativeUpload({
+          sessionId,
+          transferId: id,
+          localPath,
+          remotePath: safePath
+        })
+        .then((res) => {
+          this.activeTransfers.delete(id)
+          if (!res.success) reject(new Error('Native upload failed'))
+          else resolve()
+        })
+        .catch((err) => {
+          this.activeTransfers.delete(id)
+          reject(err)
+        })
     })
   }
 
   async download(sessionId: string, remotePath: string, localPath: string, transferId?: string, resumeOffset: number = 0): Promise<void> {
     const safePath = sanitizeRemotePath(remotePath)
-    const stats = await this.stat(sessionId, safePath)
-    const totalSize = stats.size
     const id = transferId || `${Date.now()}`
 
-    await fs.promises.mkdir(path.dirname(localPath), { recursive: true })
-
     return new Promise((resolve, reject) => {
-      let settled = false
-      let offset = Math.max(0, Math.min(resumeOffset, totalSize))
       let cancelled = false
-      const writeStream = fs.createWriteStream(localPath, { flags: offset > 0 ? 'a' : 'w' })
-
-      const finish = (error?: Error) => {
-        if (settled) return
-        settled = true
-        this.activeTransfers.delete(id)
-        this.lastProgressTime.delete(id)
-        this.lastProgressTime.delete(id + '_timer')
-        this.pendingProgress.delete(id)
-        try { writeStream.end() } catch { /* ignore */ }
-        if (error) reject(error)
-        else resolve()
-      }
-
       this.activeTransfers.set(id, {
         abort: () => {
           cancelled = true
-          finish(new Error('Transfer cancelled'))
         }
       })
 
-      if (offset > 0) {
-        this.notifyProgress(id, offset, totalSize, basename(safePath))
-      }
-
-      writeStream.on('error', (error) => finish(error instanceof Error ? error : new Error(String(error))))
-
-      const pump = async (): Promise<void> => {
-        try {
-          while (true) {
-            if (cancelled || !this.activeTransfers.has(id)) {
-              finish(new Error('Transfer cancelled'))
-              return
-            }
-
-            if (offset >= totalSize) {
-              this.notifyProgress(id, totalSize, totalSize, basename(safePath))
-              finish()
-              return
-            }
-
-            const result = await this.readBinaryChunkWithRetry(sessionId, safePath, offset)
-            const chunk = Buffer.from(result.contentBase64 || '', 'base64')
-            if (chunk.length === 0 && result.eof) {
-              this.notifyProgress(id, totalSize, totalSize, basename(safePath))
-              finish()
-              return
-            }
-
-            await new Promise<void>((resolveWrite, rejectWrite) => {
-              writeStream.write(chunk, (error) => {
-                if (error) rejectWrite(error)
-                else resolveWrite()
-              })
-            })
-
-            offset += chunk.length
-            this.notifyProgress(id, Math.min(offset, totalSize), totalSize, basename(safePath))
-          }
-        } catch (error: any) {
-          finish(error instanceof Error ? error : new Error(error?.message || String(error)))
-        }
-      }
-
-      void pump()
+      rustCoreService
+        .nativeDownload({
+          sessionId,
+          transferId: id,
+          localPath,
+          remotePath: safePath
+        })
+        .then((res) => {
+          this.activeTransfers.delete(id)
+          if (!res.success) reject(new Error('Native download failed'))
+          else resolve()
+        })
+        .catch((err) => {
+          this.activeTransfers.delete(id)
+          reject(err)
+        })
     })
   }
 
