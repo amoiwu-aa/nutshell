@@ -10,6 +10,11 @@ const MAX_READ_FILE_SIZE = 10 * 1024 * 1024 // 10MB
 const INACTIVITY_TIMEOUT_MS = 60 * 1000 // 60 seconds no data = timeout
 const TAR_DOWNLOAD_THRESHOLD = 30 // Use tar-based download when dir has more than this many files
 
+// --- Performance tuning constants ---
+const SFTP_CHUNK_SIZE = 256 * 1024 // 256KB per chunk (ssh2 default 64KB is too small for gigabit)
+const SFTP_CONCURRENCY = 32 // Number of concurrent in-flight requests
+const SFTP_STREAM_HWM = 512 * 1024 // Stream highWaterMark for fallback stream transfers
+
 export interface RemoteFileInfo {
   filename: string
   longname: string
@@ -213,8 +218,8 @@ class SFTPManager {
       if (transferred === 0) {
         // Use fastPut for fast concurrent uploads if starting from beginning
         sftp.fastPut(localPath, safePath, {
-          concurrency: 32,
-          chunkSize: 64 * 1024,
+          concurrency: SFTP_CONCURRENCY,
+          chunkSize: SFTP_CHUNK_SIZE,
           step: (transferredBytes: number, _chunk: number, total: number) => {
             lastActivity = Date.now()
             if (this.activeTransfers.has(id)) {
@@ -236,7 +241,7 @@ class SFTPManager {
         // Fallback to sequential stream for resuming uploads
         const readStream = fs.createReadStream(localPath, {
           start: transferred,
-          highWaterMark: 256 * 1024
+          highWaterMark: SFTP_STREAM_HWM
         })
         const writeStream = sftp.createWriteStream(safePath, {
           flags: transferred > 0 ? 'a' : 'w'
@@ -342,8 +347,8 @@ class SFTPManager {
 
       if (transferred === 0) {
         sftp.fastGet(safePath, localPath, {
-          concurrency: 32,
-          chunkSize: 64 * 1024,
+          concurrency: SFTP_CONCURRENCY,
+          chunkSize: SFTP_CHUNK_SIZE,
           step: (transferredBytes: number, _chunk: number, total: number) => {
             lastActivity = Date.now()
             if (this.activeTransfers.has(id)) {
@@ -365,7 +370,7 @@ class SFTPManager {
 
       const readStream = sftp.createReadStream(safePath, {
         start: transferred,
-        highWaterMark: 256 * 1024
+        highWaterMark: SFTP_STREAM_HWM
       } as any)
       const writeStream = fs.createWriteStream(localPath, {
         flags: 'a'
@@ -553,8 +558,8 @@ class SFTPManager {
               }, 10000)
 
               workerSftp.fastGet(file.remote, file.local, {
-                concurrency: 8,
-                chunkSize: 64 * 1024,
+                concurrency: 16,
+                chunkSize: SFTP_CHUNK_SIZE,
                 step: (transferred: number, _chunk: number, _total: number) => {
                   lastActivity = Date.now()
                   fileProgress[fileIdx] = transferred
@@ -681,8 +686,8 @@ class SFTPManager {
         }, 10000)
 
         sftp.fastGet(tempTarRemote, tempTarLocal, {
-          concurrency: 32,
-          chunkSize: 64 * 1024,
+          concurrency: SFTP_CONCURRENCY,
+          chunkSize: SFTP_CHUNK_SIZE,
           step: (transferred: number, _chunk: number, total: number) => {
             lastActivity = Date.now()
             if (!cancelled && this.activeTransfers.has(transferId)) {
@@ -889,41 +894,22 @@ class SFTPManager {
                 }
               }, 10000)
 
-              const readStream = fs.createReadStream(file.local, { highWaterMark: 256 * 1024 })
-              const writeStream = workerSftp.createWriteStream(file.remote, { flags: 'w' } as any)
-
-              let fileTransferred = 0
-
-              readStream.on('data', (chunk: string | Buffer) => {
-                lastActivity = Date.now()
-                const chunkLen = Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk)
-                fileTransferred = Math.min(file.size, fileTransferred + chunkLen)
-                fileProgress[fileIdx] = fileTransferred
-                if (this.activeTransfers.has(id)) {
-                  this.notifyProgress(id, getTotal(), totalSize, path.basename(file.local))
+              // Use fastPut for concurrent chunk uploads (much faster than stream pipe)
+              workerSftp.fastPut(file.local, file.remote, {
+                concurrency: 16,
+                chunkSize: SFTP_CHUNK_SIZE,
+                step: (transferred: number, _chunk: number, _total: number) => {
+                  lastActivity = Date.now()
+                  fileProgress[fileIdx] = transferred
+                  if (this.activeTransfers.has(id)) {
+                    this.notifyProgress(id, getTotal(), totalSize, path.basename(file.local))
+                  }
                 }
-              })
-
-              readStream.on('error', (err) => {
+              }, (err) => {
                 clearInterval(inactivityTimer)
-                try { writeStream.destroy() } catch { /* ignore */ }
-                reject(err)
+                if (err) reject(err)
+                else resolve()
               })
-
-              writeStream.on('error', (err: any) => {
-                clearInterval(inactivityTimer)
-                try { readStream.destroy() } catch { /* ignore */ }
-                reject(err)
-              })
-
-              const done = () => {
-                clearInterval(inactivityTimer)
-                resolve()
-              }
-              writeStream.on('finish', done)
-              writeStream.on('close', done)
-
-              readStream.pipe(writeStream)
             })
             lastErr = null
             break

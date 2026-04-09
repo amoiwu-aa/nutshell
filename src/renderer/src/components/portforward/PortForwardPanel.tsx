@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   ArrowRightLeft,
+  ArrowRight,
   Plus,
   Trash2,
   Copy,
@@ -8,7 +9,8 @@ import {
   ChevronDown,
   ChevronRight,
   Globe,
-  ExternalLink
+  ExternalLink,
+  Chrome
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { v4 as uuidv4 } from 'uuid'
@@ -73,7 +75,9 @@ export function PortForwardPanel({ sessionId }: PortForwardPanelProps) {
     const removeListener = window.api.portForward.onStatus((ruleId, status) => {
       setRuleStatuses((prev) => ({ ...prev, [ruleId]: status }))
     })
-    return () => removeListener()
+    return () => {
+      removeListener()
+    }
   }, [])
 
   const loadRules = async () => {
@@ -129,7 +133,8 @@ export function PortForwardPanel({ sessionId }: PortForwardPanelProps) {
   }
 
   const handleCopy = (rule: PortForwardRule) => {
-    const addr = `${rule.localHost}:${rule.localPort}`
+    const isRemote = rule.type === 'remote'
+    const addr = isRemote ? `${rule.remoteHost}:${rule.remotePort}` : `${rule.localHost}:${rule.localPort}`
     navigator.clipboard.writeText(addr)
     setCopiedId(rule.id)
     setTimeout(() => setCopiedId(null), 1500)
@@ -148,24 +153,27 @@ export function PortForwardPanel({ sessionId }: PortForwardPanelProps) {
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-card border-b border-border z-10">
-            <tr className="text-xs text-muted-foreground">
+          <thead className="sticky top-0 bg-card/90 backdrop-blur-sm border-b border-border z-10">
+            <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left px-3 py-2 font-medium w-10"></th>
-              <th className="text-left px-3 py-2 font-medium">端口</th>
-              <th className="text-left px-3 py-2 font-medium">类型</th>
-              <th className="text-left px-3 py-2 font-medium">本地地址</th>
-              <th className="text-left px-3 py-2 font-medium">远程地址</th>
-              <th className="text-left px-3 py-2 font-medium w-20">状态</th>
-              <th className="text-right px-3 py-2 font-medium w-20">操作</th>
+              <th className="text-left px-3 py-2 font-medium w-20">类型</th>
+              <th className="text-left px-3 py-2 font-medium">监听入口</th>
+              <th className="text-center px-1 py-2 font-medium text-muted-foreground/40 w-8">方向</th>
+              <th className="text-left px-3 py-2 font-medium">转发目标</th>
+              <th className="text-left px-3 py-2 font-medium w-24">状态</th>
+              <th className="text-right px-3 py-2 font-medium w-32">操作</th>
             </tr>
           </thead>
           <tbody>
             {rules.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-muted-foreground">
-                  <div className="flex flex-col items-center gap-1.5">
-                    <ArrowRightLeft className="w-5 h-5 opacity-40" />
-                    <span className="text-xs">暂无端口转发规则，在下方输入端口号快速添加</span>
+                <td colSpan={7} className="text-center py-10 text-muted-foreground">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-10 h-10 rounded-full bg-accent/50 flex flex-col items-center justify-center">
+                      <ArrowRightLeft className="w-5 h-5 opacity-40" />
+                    </div>
+                    <span className="text-sm font-medium">暂无端口转发规则</span>
+                    <span className="text-xs opacity-60">在下方输入端口号快速添加</span>
                   </div>
                 </td>
               </tr>
@@ -178,75 +186,81 @@ export function PortForwardPanel({ sessionId }: PortForwardPanelProps) {
                     className="border-b border-border/30 hover:bg-accent/30 transition-colors group"
                   >
                     {/* Status dot */}
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5 text-center">
                       <div
-                        className={cn('w-2 h-2 rounded-full', status.color)}
+                        className={cn('w-2 h-2 rounded-full mx-auto shadow-sm', status.color, status.color === 'bg-green-500' ? 'shadow-green-500/40 ring-2 ring-green-500/20' : '')}
                         title={status.label}
                       />
                     </td>
-                    {/* Port */}
-                    <td className="px-3 py-2 font-mono text-xs font-medium">
-                      {rule.localPort}
-                    </td>
                     {/* Type badge */}
-                    <td className="px-3 py-2">
-                      <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium', typeColors[rule.type])}>
+                    <td className="px-3 py-2.5">
+                      <span className={cn('px-2 py-0.5 rounded text-[10px] font-medium border border-transparent', typeColors[rule.type])}>
                         {typeLabels[rule.type]}
                       </span>
                     </td>
-                    {/* Local address */}
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {rule.localHost}:{rule.localPort}
+                    {/* Ingress (Listen) */}
+                    <td className="px-3 py-2.5 font-mono text-xs">
+                      <span className="text-muted-foreground/60">{rule.type === 'remote' ? rule.remoteHost : rule.localHost}:</span>
+                      <span className="text-foreground tracking-wider font-semibold">{rule.type === 'remote' ? rule.remotePort : rule.localPort}</span>
                     </td>
-                    {/* Remote address */}
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                    {/* Arrow */}
+                    <td className="px-1 py-2.5 text-center text-muted-foreground/40">
+                      <ArrowRight className="w-3.5 h-3.5 inline-block" />
+                    </td>
+                    {/* Egress (Target) */}
+                    <td className="px-3 py-2.5 font-mono text-xs">
                       {rule.type === 'dynamic' ? (
-                        <span className="flex items-center gap-1">
-                          <Globe className="w-3 h-3" />
-                          <span>动态代理</span>
+                        <span className="flex items-center gap-1.5 pt-0.5">
+                          <Globe className="w-3.5 h-3.5 text-blue-400/80" />
+                          <span className="text-foreground/80 font-sans text-[11px] font-medium tracking-wide">动态代理 (SOCKS5)</span>
                         </span>
                       ) : (
-                        `${rule.remoteHost}:${rule.remotePort}`
+                        <>
+                          <span className="text-muted-foreground/60">{rule.type === 'remote' ? rule.localHost : rule.remoteHost}:</span>
+                          <span className="text-foreground/80 tracking-wider font-medium">{rule.type === 'remote' ? rule.localPort : rule.remotePort}</span>
+                        </>
                       )}
                     </td>
                     {/* Status text */}
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <span className={cn(
-                        'text-[10px]',
-                        status.color === 'bg-green-500' ? 'text-green-400' :
-                        status.color === 'bg-red-500' ? 'text-red-400' :
-                        'text-muted-foreground'
+                        'text-[10px] font-medium px-1.5 py-0.5 rounded-sm',
+                        status.color === 'bg-green-500' ? 'text-green-500 bg-green-500/10' :
+                        status.color === 'bg-red-500' ? 'text-red-500 bg-red-500/10' :
+                        'text-muted-foreground bg-accent'
                       )}>
                         {status.label}
                       </span>
                     </td>
                     {/* Actions */}
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => window.open(`http://${rule.localHost}:${rule.localPort}`, '_blank')}
-                          className="p-1 hover:bg-accent rounded transition-colors"
-                          title="在浏览器中打开"
-                        >
-                          <ExternalLink className="w-3 h-3 text-muted-foreground" />
-                        </button>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {rule.type === 'local' && (
+                          <button
+                            onClick={() => window.open(`http://${rule.localHost}:${rule.localPort}`, '_blank')}
+                            className="p-1.5 hover:bg-primary/10 hover:text-primary rounded-md transition-colors"
+                            title="在浏览器中打开"
+                          >
+                            <Chrome className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleCopy(rule)}
-                          className="p-1 hover:bg-accent rounded transition-colors"
-                          title="复制本地地址"
+                          className="p-1.5 hover:bg-primary/10 hover:text-primary rounded-md transition-colors"
+                          title="复制监听地址"
                         >
                           {copiedId === rule.id ? (
-                            <Check className="w-3 h-3 text-green-400" />
+                            <Check className="w-3.5 h-3.5 text-green-500" />
                           ) : (
-                            <Copy className="w-3 h-3 text-muted-foreground" />
+                            <Copy className="w-3.5 h-3.5" />
                           )}
                         </button>
                         <button
                           onClick={() => handleRemove(rule.id)}
-                          className="p-1 hover:bg-accent rounded transition-colors"
+                          className="p-1.5 hover:bg-destructive/10 hover:text-destructive rounded-md transition-colors"
                           title="删除"
                         >
-                          <Trash2 className="w-3 h-3 text-destructive" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -267,114 +281,130 @@ export function PortForwardPanel({ sessionId }: PortForwardPanelProps) {
       )}
 
       {/* Quick add bar */}
-      <div className="border-t border-border bg-background/50 shrink-0">
-        <div className="flex items-center gap-2 px-3 py-1.5">
-          <Plus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+      <div className="border-t border-border/60 bg-card/60 backdrop-blur-md shrink-0">
+        <div className="flex flex-col">
+          {/* Main quick add row */}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <div className="w-7 h-7 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+              <Plus className="w-4 h-4 text-primary" />
+            </div>
 
-          {/* Port input */}
-          <input
-            ref={portInputRef}
-            type="number"
-            value={addPort}
-            onChange={(e) => setAddPort(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd() }}
-            placeholder="输入端口号..."
-            min={1}
-            max={65535}
-            className="w-24 px-2 py-1 bg-background border border-input rounded text-xs outline-none focus:ring-1 focus:ring-ring font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
+            {/* Type selector */}
+            <div className="relative">
+              <button
+                onClick={() => setShowTypeMenu(!showTypeMenu)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-secondary/80 rounded-md text-xs font-medium hover:bg-secondary transition-colors"
+                title="选择转发类型"
+              >
+                <span className={cn('w-2 h-2 rounded-full shadow-sm', addType === 'local' ? 'bg-blue-400' : addType === 'remote' ? 'bg-amber-400' : 'bg-purple-400')} />
+                {typeLabels[addType]}
+                <ChevronDown className="w-3.5 h-3.5 opacity-60" />
+              </button>
+              {showTypeMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowTypeMenu(false)} />
+                  <div className="absolute bottom-full left-0 mb-2 z-50 bg-card border border-border/60 rounded-lg shadow-xl shadow-black/10 py-1.5 min-w-[130px] overflow-hidden">
+                    {(['local', 'remote', 'dynamic'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => { setAddType(type); setShowTypeMenu(false) }}
+                        className={cn(
+                          'flex items-center gap-2 w-full px-3 py-2 text-xs font-medium hover:bg-accent/80 transition-colors',
+                          addType === type ? 'text-primary bg-primary/5' : 'text-foreground/80'
+                        )}
+                      >
+                        <span className={cn('w-2 h-2 rounded-full', type === 'local' ? 'bg-blue-400' : type === 'remote' ? 'bg-amber-400' : 'bg-purple-400')} />
+                        {typeLabels[type]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
-          {/* Type selector */}
-          <div className="relative">
-            <button
-              onClick={() => setShowTypeMenu(!showTypeMenu)}
-              className="flex items-center gap-1 px-2 py-1 bg-secondary rounded text-xs hover:bg-secondary/80 transition-colors"
-            >
-              <span className={cn('w-1.5 h-1.5 rounded-full', addType === 'local' ? 'bg-blue-400' : addType === 'remote' ? 'bg-amber-400' : 'bg-purple-400')} />
-              {typeLabels[addType]}
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {showTypeMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowTypeMenu(false)} />
-                <div className="absolute bottom-full left-0 mb-1 z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[120px]">
-                  {(['local', 'remote', 'dynamic'] as const).map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => { setAddType(type); setShowTypeMenu(false) }}
-                      className={cn(
-                        'flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-accent transition-colors',
-                        addType === type && 'text-primary'
-                      )}
-                    >
-                      <span className={cn('w-1.5 h-1.5 rounded-full', type === 'local' ? 'bg-blue-400' : type === 'remote' ? 'bg-amber-400' : 'bg-purple-400')} />
-                      {typeLabels[type]}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Advanced toggle */}
-          <button
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-1 px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {showAdvanced ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            高级
-          </button>
-
-          <div className="flex-1" />
-
-          {/* Add button */}
-          <button
-            onClick={handleQuickAdd}
-            disabled={!addPort || creating}
-            className="flex items-center gap-1 px-2.5 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-          >
-            <Plus className="w-3 h-3" />
-            转发
-          </button>
-        </div>
-
-        {/* Advanced options */}
-        {showAdvanced && (
-          <div className="flex items-center gap-3 px-3 pb-2 pt-0.5">
-            <div className="flex items-center gap-1.5">
-              <label className="text-[10px] text-muted-foreground shrink-0">本地地址</label>
+            {/* Port input */}
+            <div className="relative">
               <input
-                type="text"
-                value={advLocalHost}
-                onChange={(e) => setAdvLocalHost(e.target.value)}
-                className="w-28 px-1.5 py-0.5 bg-background border border-input rounded text-xs outline-none focus:ring-1 focus:ring-ring font-mono"
+                ref={portInputRef}
+                type="number"
+                value={addPort}
+                onChange={(e) => setAddPort(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd() }}
+                placeholder={addType === 'remote' ? "输入远程端口" : "输入本地端口"}
+                min={1}
+                max={65535}
+                className="w-[140px] pl-3 pr-2 py-1.5 bg-background/50 border border-input rounded-md text-sm outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-muted-foreground/50 placeholder:font-sans"
               />
             </div>
-            {addType !== 'dynamic' && (
-              <>
-                <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] text-muted-foreground shrink-0">远程地址</label>
+
+            {/* Advanced toggle */}
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className={cn(
+                "flex items-center gap-1 ml-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors duration-200",
+                showAdvanced ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
+            >
+              高级设置
+              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", showAdvanced ? "rotate-180" : "")} />
+            </button>
+
+            <div className="flex-1" />
+
+            {/* Add button */}
+            <button
+              onClick={handleQuickAdd}
+              disabled={!addPort || creating}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-sm font-medium shadow-sm hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100 disabled:cursor-not-allowed shrink-0"
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+              添加规则
+            </button>
+          </div>
+
+          {/* Advanced options with grid animation */}
+          <div className={cn(
+            "grid transition-all duration-300 ease-in-out border-t",
+            showAdvanced ? "grid-rows-[1fr] opacity-100 border-border/30" : "grid-rows-[0fr] opacity-0 border-transparent"
+          )}>
+            <div className="overflow-hidden">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3 px-3 py-3 pl-12 bg-accent/20">
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] font-medium text-muted-foreground shrink-0 uppercase tracking-wider">绑定本地IP</label>
                   <input
                     type="text"
-                    value={advRemoteHost}
-                    onChange={(e) => setAdvRemoteHost(e.target.value)}
-                    className="w-28 px-1.5 py-0.5 bg-background border border-input rounded text-xs outline-none focus:ring-1 focus:ring-ring font-mono"
+                    value={advLocalHost}
+                    onChange={(e) => setAdvLocalHost(e.target.value)}
+                    className="w-32 px-2 py-1 bg-background border border-input rounded-md text-xs outline-none focus:ring-1 focus:ring-primary font-mono shadow-sm"
                   />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] text-muted-foreground shrink-0">远程端口</label>
-                  <input
-                    type="number"
-                    value={advRemotePort}
-                    onChange={(e) => setAdvRemotePort(e.target.value)}
-                    placeholder="同本地"
-                    className="w-20 px-1.5 py-0.5 bg-background border border-input rounded text-xs outline-none focus:ring-1 focus:ring-ring font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </div>
-              </>
-            )}
+                {addType !== 'dynamic' && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-medium text-muted-foreground shrink-0 uppercase tracking-wider">目标IP</label>
+                      <input
+                        type="text"
+                        value={advRemoteHost}
+                        onChange={(e) => setAdvRemoteHost(e.target.value)}
+                        className="w-32 px-2 py-1 bg-background border border-input rounded-md text-xs outline-none focus:ring-1 focus:ring-primary font-mono shadow-sm"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-medium text-muted-foreground shrink-0 uppercase tracking-wider">目标端口</label>
+                      <input
+                        type="number"
+                        value={advRemotePort}
+                        onChange={(e) => setAdvRemotePort(e.target.value)}
+                        placeholder="同绑定端口"
+                        className="w-24 px-2 py-1 bg-background border border-input rounded-md text-xs outline-none focus:ring-1 focus:ring-primary font-mono shadow-sm placeholder:text-[10px] placeholder:font-sans [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

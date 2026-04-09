@@ -118,7 +118,18 @@ class SSHManager {
         username: config.username,
         keepaliveInterval: 10000,
         keepaliveCountMax: 3,
-        readyTimeout: 30000
+        readyTimeout: 30000,
+        // Performance: increase SSH channel buffer for high-throughput transfers
+        highWaterMark: 1024 * 1024, // 1MB (default 32KB is too small for gigabit)
+        // Prefer AES-GCM ciphers that benefit from hardware AES-NI acceleration
+        algorithms: {
+          cipher: [
+            'aes128-gcm', 'aes128-gcm@openssh.com',
+            'aes256-gcm', 'aes256-gcm@openssh.com',
+            'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+            'chacha20-poly1305@openssh.com'
+          ]
+        }
       }
 
       if (config.authType === 'password') {
@@ -250,7 +261,16 @@ class SSHManager {
           username: currentSession.config.username,
           keepaliveInterval: 10000,
           keepaliveCountMax: 3,
-          readyTimeout: 30000
+          readyTimeout: 30000,
+          highWaterMark: 1024 * 1024,
+          algorithms: {
+            cipher: [
+              'aes128-gcm', 'aes128-gcm@openssh.com',
+              'aes256-gcm', 'aes256-gcm@openssh.com',
+              'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
+              'chacha20-poly1305@openssh.com'
+            ]
+          }
         }
 
         if (currentSession.config.authType === 'password') {

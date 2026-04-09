@@ -473,7 +473,7 @@ class RustRemoteFS {
         await new Promise<void>((resolve, reject) => {
           sftp.fastGet(tempTarRemote, tempTarLocal, {
             concurrency: 32,
-            chunkSize: 64 * 1024,
+            chunkSize: 256 * 1024,
             step: (transferred: number, _chunk: number, total: number) => {
               if (!cancelled && this.activeTransfers.has(transferId)) {
                 this.notifyProgress(transferId, transferred, total, '下载中...')

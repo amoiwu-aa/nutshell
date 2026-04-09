@@ -381,72 +381,19 @@ class ServerMonitor {
     const currentInterfaces = new Map<string, { rx: number; tx: number }>()
 
     for (const line of netOutput.split('\n')) {
-      const cols = line.trim().split(/\s+/)
-      if (cols.length >= 3) {
-        const name = cols[0]
-        const rx = parseInt(cols[1]) || 0
-        const tx = parseInt(cols[2]) || 0
+      const idx = line.indexOf(':')
+      if (idx === -1) continue
+
+      const name = line.substring(0, idx).trim()
+      if (!name || name === 'lo') continue
+
+      const stats = line.substring(idx + 1).trim().split(/\s+/)
+      if (stats.length >= 8) {
+        const rx = parseInt(stats[0]) || 0
+        const tx = parseInt(stats[8]) || 0
         currentInterfaces.set(name, { rx, tx })
 
-        const isVirtual = /^(docker|veth|br-|cali|flannel|cni|virbr|lxc)/i.test(name)
-        if (!isVirtual) {
-          totalRx += rx
-          totalTx += tx
-        }
-
-        if (prevStats && timeDiff > 0.1) {
-          const prevIface = prevStats.interfaces.get(name)
-          if (prevIface) {
-            interfaceRates.push({
-              name,
-              rx: Math.max(0, (rx - prevIface.rx) / timeDiff),
-              tx: Math.max(0, (tx - prevIface.tx) / timeDiff)
-            })
-          } else {
-            interfaceRates.push({ name, rx: 0, tx: 0 })
-          }
-        } else {
-          interfaceRates.push({ name, rx: 0, tx: 0 })
-        }
-      }
-    }
-
-    if (prevStats && timeDiff > 0.1) {
-      rxRate = Math.max(0, (totalRx - prevStats.total.rx) / timeDiff)
-      txRate = Math.max(0, (totalTx - prevStats.total.tx) / timeDiff)
-    }
-
-    this.prevNetworkStats.set(sessionId, {
-      time: serverTime,
-      total: { rx: totalRx, tx: totalTx },
-      interfaces: currentInterfaces
-    })
-
-    return { rxRate, txRate, interfaceRates }
-  }
-
-  private parseNetworkRaw(netOutput: string, serverTime: number, sessionId: string): { rxRate: number; txRate: number; interfaceRates: { name: string; rx: number; tx: number }[] } {
-    let rxRate = 0, txRate = 0
-    const interfaceRates: { name: string; rx: number; tx: number }[] = []
-    if (!netOutput) return { rxRate, txRate, interfaceRates }
-
-    const prevStats = this.prevNetworkStats.get(sessionId)
-    const timeDiff = prevStats ? (serverTime - prevStats.time) : 0
-
-    let totalRx = 0, totalTx = 0
-    const currentInterfaces = new Map<string, { rx: number; tx: number }>()
-
-    for (const line of netOutput.split('\n').slice(2)) {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('lo:')) continue
-      const cols = trimmed.replace(':', ' ').split(/\s+/)
-      if (cols.length >= 10) {
-        const name = cols[0]
-        const rx = parseInt(cols[1]) || 0
-        const tx = parseInt(cols[9]) || 0
-        currentInterfaces.set(name, { rx, tx })
-
-        const isVirtual = /^(docker|veth|br-|cali|flannel|cni|virbr|lxc)/i.test(name)
+        const isVirtual = /^(docker|veth|br-|cali|flannel|cni|virbr|lxc|tun|tap|wg|tailscale|zt|vnet|qbr|qvo|qvb)/i.test(name)
         if (!isVirtual) {
           totalRx += rx
           totalTx += tx
@@ -518,7 +465,7 @@ class ServerMonitor {
     }
 
     if (mod.network) {
-      fastCommands.push(`awk 'NR>2 && $1!~"lo:" {gsub(/:/, "", $1); print $1, $2, $10}' /proc/net/dev`)
+      fastCommands.push(`cat /proc/net/dev 2>/dev/null`)
       fastCmdMap.push('network')
     }
 
@@ -645,7 +592,7 @@ class ServerMonitor {
     const mem = this.parseMemory(snapshot.memory || '')
     const serverTime = parseFloat((snapshot.serverTime || '').split(/\s+/)[0]) || (Date.now() / 1000)
     const net = mod.network
-      ? this.parseNetworkRaw(snapshot.network || '', serverTime, sessionId)
+      ? this.parseNetwork(snapshot.network || '', serverTime, sessionId)
       : { rxRate: 0, txRate: 0, interfaceRates: [] as { name: string; rx: number; tx: number }[] }
 
     const loadParts = (snapshot.loadavg || '').split(/\s+/)
