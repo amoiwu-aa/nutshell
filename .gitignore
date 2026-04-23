@@ -8,3 +8,9 @@ native/nutshell-core/target/
 Thumbs.db
 __pycache__/
 *.pyc
+
+# SFTP benchmark fixtures (large binaries)
+dummy_*.bin
+
+# Rust scratch files
+native/nutshell-core/temp.rs
