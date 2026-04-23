@@ -1409,7 +1409,7 @@ async fn native_upload(
     };
 
     let mut transferred = 0u64;
-    let mut buffer = vec![0; 512 * 1024]; // 512KB chunk
+    let mut buffer = vec![0; 32 * 1024]; // 32KB chunk (max allowed by most OpenSSH servers)
     let mut last_report = tokio::time::Instant::now();
 
     loop {
@@ -1490,7 +1490,7 @@ async fn native_download(
     };
 
     let mut transferred = 0u64;
-    let mut buffer = vec![0; 512 * 1024]; // 512KB chunk
+    let mut buffer = vec![0; 32 * 1024]; // 32KB chunk (max allowed by most OpenSSH servers)
     let mut last_report = tokio::time::Instant::now();
 
     loop {
