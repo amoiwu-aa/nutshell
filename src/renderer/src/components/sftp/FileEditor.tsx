@@ -1,72 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Save, X, FileText, WrapText, Search, Sparkles, Send, Copy, Play, Loader2, Code, HelpCircle, Wrench, Bug, AlertCircle, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Save, X, FileText, WrapText, Search, Sparkles, Send, Copy, Loader2, Code, HelpCircle, Wrench, Bug, AlertCircle, RefreshCw } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import hljs from 'highlight.js/lib/core'
-
-// Language loaders - lazy loaded on demand
-const langLoaders: Record<string, () => Promise<any>> = {
-  javascript: () => import('highlight.js/lib/languages/javascript'),
-  typescript: () => import('highlight.js/lib/languages/typescript'),
-  python: () => import('highlight.js/lib/languages/python'),
-  bash: () => import('highlight.js/lib/languages/bash'),
-  json: () => import('highlight.js/lib/languages/json'),
-  xml: () => import('highlight.js/lib/languages/xml'),
-  css: () => import('highlight.js/lib/languages/css'),
-  sql: () => import('highlight.js/lib/languages/sql'),
-  yaml: () => import('highlight.js/lib/languages/yaml'),
-  go: () => import('highlight.js/lib/languages/go'),
-  java: () => import('highlight.js/lib/languages/java'),
-  rust: () => import('highlight.js/lib/languages/rust'),
-  markdown: () => import('highlight.js/lib/languages/markdown'),
-  dockerfile: () => import('highlight.js/lib/languages/dockerfile'),
-  nginx: () => import('highlight.js/lib/languages/nginx'),
-  ini: () => import('highlight.js/lib/languages/ini'),
-  php: () => import('highlight.js/lib/languages/php')
-}
-
-const loadedLangs = new Set<string>()
-
-async function ensureLanguage(lang: string): Promise<boolean> {
-  if (lang === 'plaintext' || loadedLangs.has(lang)) return loadedLangs.has(lang)
-  const actualLang = lang === 'html' ? 'xml' : lang
-  const loader = langLoaders[actualLang]
-  if (!loader) return false
-  try {
-    const mod = await loader()
-    hljs.registerLanguage(actualLang, mod.default)
-    if (lang === 'html') hljs.registerLanguage('html', mod.default)
-    loadedLangs.add(lang)
-    loadedLangs.add(actualLang)
-    return true
-  } catch { return false }
-}
+import { MonacoEditorWrapper, detectMonacoLang, monaco } from '../workspace/MonacoEditorWrapper'
 
 interface FileEditorProps {
   sessionId: string
   filePath: string
   fileName: string
   onClose: () => void
-}
-
-function detectLanguage(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase()
-  const langMap: Record<string, string> = {
-    js: 'javascript', jsx: 'javascript', mjs: 'javascript',
-    ts: 'typescript', tsx: 'typescript',
-    py: 'python', rb: 'python',
-    go: 'go', rs: 'rust', java: 'java',
-    c: 'javascript', cpp: 'javascript', h: 'javascript',
-    cs: 'javascript', php: 'php',
-    sh: 'bash', bash: 'bash', zsh: 'bash',
-    yml: 'yaml', yaml: 'yaml',
-    json: 'json', xml: 'xml', html: 'html', htm: 'html',
-    css: 'css', scss: 'css', less: 'css',
-    md: 'markdown', sql: 'sql',
-    dockerfile: 'dockerfile', toml: 'ini', ini: 'ini',
-    conf: 'nginx', cfg: 'ini', env: 'bash',
-    nginx: 'nginx'
-  }
-  return langMap[ext || ''] || 'plaintext'
 }
 
 function isBinaryFile(filename: string): boolean {
@@ -90,27 +31,25 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
   const [lineCount, setLineCount] = useState(0)
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 })
   const [wordWrap, setWordWrap] = useState(false)
-  const [showSearch, setShowSearch] = useState(false)
-  const [searchText, setSearchText] = useState('')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const highlightRef = useRef<HTMLPreElement>(null)
-  const lineNumberRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const [showAI, setShowAI] = useState(false)
   const [aiInput, setAiInput] = useState('')
   const [aiResult, setAiResult] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiMode, setAiMode] = useState<'generate' | 'explain' | 'refactor' | 'fix'>('generate')
 
+  // Save handler needs a ref so Monaco's Ctrl+S command (bound once) sees current state.
+  const saveRef = useRef<() => void>(() => {})
+
   // Binary file editing states
   const [isBinaryMode, setIsBinaryMode] = useState(false)
   const [binarySyncStatus, setBinarySyncStatus] = useState('')
   const localWatchPathRef = useRef<string>('')
 
-  const language = detectLanguage(fileName)
+  const language = detectMonacoLang(fileName)
 
   useEffect(() => {
     return () => {
-      // Cleanup file watcher on unmount
       if (localWatchPathRef.current) {
         window.api.system.unwatchLocalFile(localWatchPathRef.current)
       }
@@ -120,25 +59,6 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
   useEffect(() => {
     loadFile()
   }, [sessionId, filePath])
-
-  // Update syntax highlight when content changes (lazy load language)
-  useEffect(() => {
-    if (!highlightRef.current || !content) return
-    const doHighlight = async () => {
-      const lang = language === 'plaintext' ? undefined : language
-      if (lang) {
-        const loaded = await ensureLanguage(lang)
-        if (loaded && highlightRef.current) {
-          try {
-            highlightRef.current.innerHTML = hljs.highlight(content, { language: lang }).value
-            return
-          } catch { /* fall through */ }
-        }
-      }
-      if (highlightRef.current) highlightRef.current.textContent = content
-    }
-    doHighlight()
-  }, [content, language])
 
   const loadFile = async () => {
     setLoading(true)
@@ -153,9 +73,6 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
         const baseName = dotIndex !== -1 ? fileName.substring(0, dotIndex) : fileName
         const localPath = `${tempDir}\\${baseName}_${uniqueId}${ext}`
 
-        // Wait, does download exist? It might be downloadWithId in some places, but check preload APIs.
-        // Assuming we fall back to a standard API or we use download/downloadWithId properly.
-        // According to preload: download: (sessionId, remotePath, localPath) => ipcRenderer.invoke('sftp:download', ...)
         const dlResult = await window.api.sftp.download(sessionId, filePath, localPath)
         if (dlResult && !dlResult.success) {
           throw new Error(dlResult.error || '下载失败')
@@ -191,6 +108,7 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
   }
 
   const handleSave = async () => {
+    if (saving) return
     setSaving(true)
     try {
       const result = await window.api.sftp.writeFile(sessionId, filePath, content)
@@ -203,86 +121,47 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
     }
     setSaving(false)
   }
+  saveRef.current = handleSave
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value
+  const handleEditorChange = (value: string) => {
     setContent(value)
-    setModified(value !== originalContent)
-    setLineCount(value.split('\n').length)
+    setLineCount(value.split('\n').length || 1)
   }
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault()
-        handleSave()
-      }
-      if (e.ctrlKey && e.key === 'f') {
-        e.preventDefault()
-        setShowSearch(true)
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        const textarea = textareaRef.current
-        if (textarea) {
-          const start = textarea.selectionStart
-          const end = textarea.selectionEnd
-          const newValue = content.substring(0, start) + '  ' + content.substring(end)
-          setContent(newValue)
-          setModified(newValue !== originalContent)
-          setTimeout(() => {
-            textarea.selectionStart = textarea.selectionEnd = start + 2
-          }, 0)
-        }
-      }
-    },
-    [content, originalContent]
-  )
+  // Compute modified flag reactively so post-save originalContent changes are honored
+  // (handleEditorChange is captured once by Monaco and can't close over latest originalContent)
+  useEffect(() => {
+    setModified(content !== originalContent)
+  }, [content, originalContent])
 
-  const handleScroll = () => {
-    if (textareaRef.current) {
-      if (lineNumberRef.current) {
-        lineNumberRef.current.scrollTop = textareaRef.current.scrollTop
-      }
-      if (highlightRef.current) {
-        highlightRef.current.scrollTop = textareaRef.current.scrollTop
-        highlightRef.current.scrollLeft = textareaRef.current.scrollLeft
-      }
-    }
+  const handleEditorReady = (editor: monaco.editor.IStandaloneCodeEditor) => {
+    editorRef.current = editor
+    editor.updateOptions({ wordWrap: wordWrap ? 'on' : 'off' })
+    // Ctrl+K toggles AI sidebar (overrides Monaco default which opens quick command)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => {
+      setShowAI((prev) => !prev)
+    })
   }
 
-  const handleSelect = () => {
-    if (textareaRef.current) {
-      const pos = textareaRef.current.selectionStart
-      const lines = content.substring(0, pos).split('\n')
-      setCursorPos({
-        line: lines.length,
-        col: (lines[lines.length - 1]?.length || 0) + 1
-      })
-    }
-  }
+  // Keep Monaco wordWrap in sync with toolbar toggle
+  useEffect(() => {
+    editorRef.current?.updateOptions({ wordWrap: wordWrap ? 'on' : 'off' })
+  }, [wordWrap])
 
-  const handleSearchNext = () => {
-    if (!searchText || !textareaRef.current) return
-    const textarea = textareaRef.current
-    const start = textarea.selectionEnd
-    const index = content.indexOf(searchText, start)
-    if (index >= 0) {
-      textarea.focus()
-      textarea.setSelectionRange(index, index + searchText.length)
-    } else {
-      const wrapIndex = content.indexOf(searchText)
-      if (wrapIndex >= 0) {
-        textarea.focus()
-        textarea.setSelectionRange(wrapIndex, wrapIndex + searchText.length)
-      }
-    }
+  const handleOpenFind = () => {
+    const ed = editorRef.current
+    if (!ed) return
+    ed.focus()
+    ed.getAction('actions.find')?.run()
   }
 
   const getSelectedText = (): string => {
-    if (!textareaRef.current) return ''
-    const { selectionStart, selectionEnd } = textareaRef.current
-    return content.substring(selectionStart, selectionEnd)
+    const ed = editorRef.current
+    if (!ed) return ''
+    const selection = ed.getSelection()
+    const model = ed.getModel()
+    if (!selection || !model || selection.isEmpty()) return ''
+    return model.getValueInRange(selection)
   }
 
   const handleAIAction = async () => {
@@ -305,24 +184,30 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
     setAiLoading(false)
   }
 
-  const extractCodeFromResult = (text: string): string => {
-    const match = text.match(/```[\w]*\n?([\s\S]*?)```/)
-    return match ? match[1].trim() : ''
-  }
-
   const insertAtCursor = (code: string) => {
-    if (!textareaRef.current) return
-    const ta = textareaRef.current
-    const start = ta.selectionStart
-    const newContent = content.substring(0, start) + code + content.substring(start)
-    setContent(newContent); setModified(true); setLineCount(newContent.split('\n').length)
+    const ed = editorRef.current
+    if (!ed) return
+    const pos = ed.getPosition()
+    if (!pos) return
+    ed.executeEdits('ai-insert', [{
+      range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+      text: code,
+      forceMoveMarkers: true
+    }])
+    ed.focus()
   }
 
   const replaceSelection = (code: string) => {
-    if (!textareaRef.current) return
-    const ta = textareaRef.current
-    const newContent = content.substring(0, ta.selectionStart) + code + content.substring(ta.selectionEnd)
-    setContent(newContent); setModified(true); setLineCount(newContent.split('\n').length)
+    const ed = editorRef.current
+    if (!ed) return
+    const selection = ed.getSelection()
+    if (!selection) return
+    ed.executeEdits('ai-replace', [{
+      range: selection,
+      text: code,
+      forceMoveMarkers: true
+    }])
+    ed.focus()
   }
 
   if (loading) {
@@ -367,7 +252,15 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
   }
 
   return (
-    <div className="flex h-full bg-background" onKeyDown={(e) => { if (e.key === 'Escape' && !showAI) onClose(); if (e.ctrlKey && e.key === 'k') { e.preventDefault(); setShowAI(!showAI) } }}>
+    <div
+      className="flex h-full bg-background"
+      onKeyDown={(e) => {
+        // Escape closes editor when AI sidebar is not absorbing it
+        if (e.key === 'Escape' && !showAI) onClose()
+        // Ctrl+K from anywhere (including AI sidebar inputs) toggles AI
+        if (e.ctrlKey && e.key === 'k') { e.preventDefault(); setShowAI((p) => !p) }
+      }}
+    >
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Toolbar */}
         <div className="flex items-center justify-between px-3 py-1.5 bg-card border-b border-border shrink-0">
@@ -384,7 +277,7 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setShowSearch(!showSearch)}
+              onClick={handleOpenFind}
               className="p-1.5 hover:bg-accent rounded transition-colors"
               title="搜索 (Ctrl+F)"
               aria-label="搜索"
@@ -421,80 +314,16 @@ export function FileEditor({ sessionId, filePath, fileName, onClose }: FileEdito
           </div>
         </div>
 
-        {/* Search bar */}
-        {showSearch && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-card border-b border-border shrink-0 animate-slide-up">
-            <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSearchNext()
-                if (e.key === 'Escape') setShowSearch(false)
-              }}
-              placeholder="搜索..."
-              className="w-60 px-2 py-1 bg-background border border-input rounded text-sm outline-none focus:ring-1 focus:ring-ring"
-              autoFocus
-            />
-            <button onClick={handleSearchNext} className="px-2 py-1 text-xs bg-secondary rounded hover:bg-secondary/80 transition-colors">
-              下一个
-            </button>
-            <button onClick={() => setShowSearch(false)} className="p-1 hover:bg-accent rounded" aria-label="关闭搜索">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
         {/* Editor area */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Line numbers */}
-          <div
-            ref={lineNumberRef}
-            className="flex flex-col items-end px-3 py-2 bg-card border-r border-border text-xs text-muted-foreground font-mono select-none overflow-hidden shrink-0"
-            style={{ minWidth: '50px' }}
-          >
-            {Array.from({ length: lineCount }, (_, i) => (
-              <div key={i + 1} className="leading-[1.5rem]">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-
-          {/* Code area with syntax highlighting overlay */}
-          <div className="relative flex-1 overflow-hidden">
-            {/* Highlighted code (visual layer) */}
-            <pre
-              ref={highlightRef}
-              className={cn(
-                'absolute inset-0 p-2 font-mono text-sm leading-[1.5rem] pointer-events-none overflow-hidden m-0',
-                wordWrap ? 'whitespace-pre-wrap' : 'whitespace-pre'
-              )}
-              style={{ tabSize: 2, color: '#c9d1d9', background: '#0d1117' }}
-              aria-hidden="true"
-            />
-
-            {/* Textarea (input layer - transparent text) */}
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              onScroll={handleScroll}
-              onClick={handleSelect}
-              onKeyUp={handleSelect}
-              className={cn(
-                'absolute inset-0 w-full h-full p-2 font-mono text-sm outline-none resize-none leading-[1.5rem] caret-white',
-                wordWrap ? 'whitespace-pre-wrap' : 'whitespace-pre overflow-auto'
-              )}
-              style={{
-                tabSize: 2,
-                color: 'transparent',
-                background: 'transparent',
-                caretColor: '#58a6ff'
-              }}
-              spellCheck={false}
-            />
-          </div>
+        <div className="flex-1 overflow-hidden">
+          <MonacoEditorWrapper
+            value={content}
+            language={language}
+            onChange={handleEditorChange}
+            onSave={() => saveRef.current()}
+            onCursorChange={(line, col) => setCursorPos({ line, col })}
+            onEditorReady={handleEditorReady}
+          />
         </div>
 
         {/* Status bar */}
