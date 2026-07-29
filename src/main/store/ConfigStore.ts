@@ -2,10 +2,14 @@ import Store from 'electron-store'
 import * as crypto from 'crypto'
 import * as os from 'os'
 
-// Generate a machine-specific key instead of hardcoding
-function getMachineKey(): string {
+// Machine-specific key material instead of a hardcoded secret.
+//
+// `hostname` is deliberately excluded: renaming the machine used to make every
+// stored credential undecryptable. Records written before that change carry no
+// version prefix and are still read with the legacy key, then re-encrypted.
+function getMachineKey(includeHostname: boolean): string {
   const machineInfo = [
-    os.hostname(),
+    ...(includeHostname ? [os.hostname()] : []),
     os.platform(),
     os.arch(),
     os.userInfo().username,
@@ -13,6 +17,8 @@ function getMachineKey(): string {
   ].join('|')
   return crypto.createHash('sha256').update(machineInfo).digest('hex')
 }
+
+const CIPHER_PREFIX = 'v2:'
 
 interface ConnectionConfig {
   id: string
@@ -74,13 +80,6 @@ interface AppSettings {
   reconnectBaseDelayMs?: number
   reconnectMaxDelayMs?: number
   monitorModules: MonitorModules
-  ai: {
-    provider: string
-    apiKey: string
-    apiUrl: string
-    model: string
-    maxTokens?: number  // For custom provider
-  }
 }
 
 interface SessionState {
@@ -89,14 +88,6 @@ interface SessionState {
     name: string
     type: string
   }>
-}
-
-export interface ChatConversation {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
-  messages: Array<{ role: string; content: string; timestamp: number }>
 }
 
 interface WindowBounds {
@@ -113,7 +104,6 @@ interface StoreSchema {
   settings: AppSettings
   encryptionSalt: string
   sessionState: SessionState
-  aiChatHistory: Record<string, ChatConversation[]>
   windowBounds: WindowBounds
 }
 
@@ -143,13 +133,13 @@ const defaultSettings: AppSettings = {
   execTimeoutMs: 30000,
   reconnectBaseDelayMs: 1000,
   reconnectMaxDelayMs: 15000,
-  monitorModules: defaultMonitorModules,
-  ai: { provider: 'openai', apiKey: '', apiUrl: '', model: '' }
+  monitorModules: defaultMonitorModules
 }
 
 class ConfigStore {
   private store: Store<StoreSchema>
   private encryptionKey: string
+  private legacyEncryptionKey: string
 
   constructor() {
     this.store = new Store<StoreSchema>({
@@ -160,7 +150,6 @@ class ConfigStore {
         settings: defaultSettings,
         encryptionSalt: '',
         sessionState: { tabs: [] },
-        aiChatHistory: {},
         windowBounds: { width: 1920, height: 1080, isMaximized: false }
       }
     })
@@ -173,18 +162,42 @@ class ConfigStore {
     }
 
     // Derive key from machine info + stored salt
-    const machineKey = getMachineKey()
-    this.encryptionKey = crypto.scryptSync(machineKey, salt, 32).toString('hex')
+    this.encryptionKey = crypto.scryptSync(getMachineKey(false), salt, 32).toString('hex')
+    this.legacyEncryptionKey = crypto.scryptSync(getMachineKey(true), salt, 32).toString('hex')
   }
 
   // --- Connections ---
   getConnections(): ConnectionConfig[] {
     const connections = this.store.get('connections', [])
-    return connections.map((conn) => ({
+    const decrypted = connections.map((conn) => ({
       ...conn,
       password: conn.password ? this.decrypt(conn.password) : undefined,
       passphrase: conn.passphrase ? this.decrypt(conn.passphrase) : undefined
     }))
+
+    const hasLegacyRecords = connections.some(
+      (conn) =>
+        (conn.password && !conn.password.startsWith(CIPHER_PREFIX)) ||
+        (conn.passphrase && !conn.passphrase.startsWith(CIPHER_PREFIX))
+    )
+    if (hasLegacyRecords) {
+      this.store.set(
+        'connections',
+        connections.map((conn, index) => ({
+          ...conn,
+          // Keep the original ciphertext where it couldn't be read: restoring
+          // the old hostname is then still able to recover it.
+          password: decrypted[index].password
+            ? this.encrypt(decrypted[index].password!)
+            : conn.password,
+          passphrase: decrypted[index].passphrase
+            ? this.encrypt(decrypted[index].passphrase!)
+            : conn.passphrase
+        }))
+      )
+    }
+
+    return decrypted
   }
 
   saveConnection(connection: ConnectionConfig): void {
@@ -283,76 +296,42 @@ class ConfigStore {
     this.store.set('sessionState', state)
   }
 
-  // --- AI Chat Conversations ---
-  getConversations(workspacePath: string): Omit<ChatConversation, 'messages'>[] {
-    const all = this.store.get('aiChatHistory', {}) as Record<string, ChatConversation[]>
-    const convs = all[workspacePath] || []
-    return convs.map(({ messages, ...rest }) => rest).sort((a, b) => b.updatedAt - a.updatedAt)
-  }
-
-  getConversation(workspacePath: string, convId: string): ChatConversation | null {
-    const all = this.store.get('aiChatHistory', {}) as Record<string, ChatConversation[]>
-    const convs = all[workspacePath] || []
-    return convs.find((c) => c.id === convId) || null
-  }
-
-  saveConversation(workspacePath: string, conversation: ChatConversation): void {
-    const all = this.store.get('aiChatHistory', {}) as Record<string, ChatConversation[]>
-    const convs = all[workspacePath] || []
-    const idx = convs.findIndex((c) => c.id === conversation.id)
-    // Keep messages limited
-    conversation.messages = conversation.messages.slice(-200)
-    if (idx >= 0) { convs[idx] = conversation } else { convs.push(conversation) }
-    all[workspacePath] = convs
-    this.store.set('aiChatHistory', all)
-  }
-
-  deleteConversation(workspacePath: string, convId: string): void {
-    const all = this.store.get('aiChatHistory', {}) as Record<string, ChatConversation[]>
-    const convs = all[workspacePath] || []
-    all[workspacePath] = convs.filter((c) => c.id !== convId)
-    this.store.set('aiChatHistory', all)
-  }
-
-  // Legacy compatibility
-  getAIChatHistory(workspacePath: string): Array<{ role: string; content: string; timestamp: number }> {
-    const all = this.store.get('aiChatHistory', {}) as any
-    const data = all[workspacePath]
-    if (Array.isArray(data) && data.length > 0 && !data[0]?.id) return data // old flat format
-    return []
-  }
-
-  saveAIChatHistory(workspacePath: string, messages: Array<{ role: string; content: string; timestamp: number }>): void {
-    // No-op for legacy, new code uses saveConversation
-  }
-
   // --- Encryption helpers ---
+
+  /**
+   * Deliberately unguarded: returning the plaintext on failure would write the
+   * credential to disk unencrypted, and the round-trip would still "work", so
+   * nothing would ever surface the problem.
+   */
   private encrypt(text: string): string {
-    try {
-      const key = Buffer.from(this.encryptionKey, 'hex')
-      const iv = crypto.randomBytes(16)
-      const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
-      let encrypted = cipher.update(text, 'utf8', 'hex')
-      encrypted += cipher.final('hex')
-      return iv.toString('hex') + ':' + encrypted
-    } catch {
-      return text
-    }
+    const key = Buffer.from(this.encryptionKey, 'hex')
+    const iv = crypto.randomBytes(16)
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
+    const encrypted = cipher.update(text, 'utf8', 'hex') + cipher.final('hex')
+    return `${CIPHER_PREFIX}${iv.toString('hex')}:${encrypted}`
   }
 
-  private decrypt(text: string): string {
-    try {
-      const [ivHex, encrypted] = text.split(':')
-      if (!ivHex || !encrypted) return text
+  /**
+   * Returns undefined when a stored credential cannot be recovered, so the user
+   * is asked for it again. Returning the ciphertext (the previous behaviour)
+   * sent it to the server as the password and surfaced as "wrong password".
+   */
+  private decrypt(text: string): string | undefined {
+    const isCurrentVersion = text.startsWith(CIPHER_PREFIX)
+    const body = isCurrentVersion ? text.slice(CIPHER_PREFIX.length) : text
+    const [ivHex, encrypted] = body.split(':')
+    if (!ivHex || !encrypted) return undefined
 
-      const key = Buffer.from(this.encryptionKey, 'hex')
-      const iv = Buffer.from(ivHex, 'hex')
-      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
-      let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-      decrypted += decipher.final('utf8')
-      return decrypted
+    try {
+      const key = Buffer.from(
+        isCurrentVersion ? this.encryptionKey : this.legacyEncryptionKey,
+        'hex'
+      )
+      const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(ivHex, 'hex'))
+      return decipher.update(encrypted, 'hex', 'utf8') + decipher.final('utf8')
     } catch {
-      return text
+      console.warn('[config] a stored credential could not be decrypted and must be re-entered')
+      return undefined
     }
   }
 }
