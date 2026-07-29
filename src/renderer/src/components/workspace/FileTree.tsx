@@ -196,13 +196,17 @@ export function FileTree({ sessionId, rootPath, gitChanges, onFileOpen, onRefres
     setCtxMenu(null)
     if (!confirm(`确定删除 ${entry.name}？${entry.isDirectory ? '（目录将被递归删除）' : ''}`)) return
     try {
-      if (entry.isDirectory) {
-        await window.api.workspace.agentRunCommand(sessionId, rootPath, `rm -rf "${entry.path.replace(/"/g, '\\"')}"`)
-      } else {
-        await window.api.sftp.delete(sessionId, entry.path)
+      // Handles directories recursively. Never build a shell `rm` from a remote
+      // filename — the server controls that string.
+      const result = await window.api.sftp.delete(sessionId, entry.path)
+      if (!result?.success) {
+        alert(`删除失败：${result?.error || '未知错误'}`)
+        return
       }
       triggerReload()
-    } catch {}
+    } catch (error: any) {
+      alert(`删除失败：${error?.message || error}`)
+    }
   }
 
   const handleCopyPath = (entry: FileEntry) => {

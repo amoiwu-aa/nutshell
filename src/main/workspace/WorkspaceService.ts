@@ -92,10 +92,9 @@ class WorkspaceService {
 
   async listDirectory(sessionId: string, dirPath: string): Promise<FileEntry[]> {
     if (!isRustSession(sessionId)) {
-      const safePath = dirPath.replace(/"/g, '\\"')
       const output = await sshManager.exec(
         sessionId,
-        `ls -la --time-style=long-iso "${safePath}" 2>/dev/null | tail -n +2`,
+        `ls -la --time-style=long-iso ${shellQuote(dirPath)} 2>/dev/null | tail -n +2`,
         10000
       )
 
@@ -142,11 +141,9 @@ class WorkspaceService {
     if (!query.trim()) return []
 
     if (!isRustSession(sessionId)) {
-      const safeRoot = rootPath.replace(/"/g, '\\"')
-      const safeQuery = query.replace(/"/g, '\\"').replace(/[`$]/g, '\\$&')
       const output = await sshManager.exec(
         sessionId,
-        `grep -rn --include='*' -I "${safeQuery}" "${safeRoot}" 2>/dev/null | head -100`,
+        `grep -rn --include='*' -I -- ${shellQuote(query)} ${shellQuote(rootPath)} 2>/dev/null | head -100`,
         15000
       )
 
@@ -211,10 +208,9 @@ class WorkspaceService {
 
   async scanProject(sessionId: string, rootPath: string): Promise<string[]> {
     if (!isRustSession(sessionId)) {
-      const safeRoot = rootPath.replace(/"/g, '\\"')
       const output = await sshManager.exec(
         sessionId,
-        `find "${safeRoot}" -maxdepth 4 -type f ` +
+        `find ${shellQuote(rootPath)} -maxdepth 4 -type f ` +
         `-not -path "*/.git/*" -not -path "*/node_modules/*" -not -path "*/__pycache__/*" ` +
         `-not -path "*/dist/*" -not -path "*/build/*" -not -path "*/.next/*" ` +
         `-not -path "*/.venv/*" -not -path "*/vendor/*" -not -name "*.pyc" ` +
@@ -253,20 +249,27 @@ class WorkspaceService {
 
   async getProjectSummary(sessionId: string, rootPath: string): Promise<string> {
     if (!isRustSession(sessionId)) {
-      const safeRoot = rootPath.replace(/"/g, '\\"')
       const tree = await sshManager.exec(
         sessionId,
-        `find "${safeRoot}" -maxdepth 3 -not -path "*/.git/*" -not -path "*/node_modules/*" ` +
-        `-not -path "*/__pycache__/*" -not -path "*/dist/*" 2>/dev/null | head -200 | ` +
-        `sed "s|${safeRoot}/||"`,
+        `find ${shellQuote(rootPath)} -maxdepth 3 -not -path "*/.git/*" -not -path "*/node_modules/*" ` +
+        `-not -path "*/__pycache__/*" -not -path "*/dist/*" 2>/dev/null | head -200`,
         10000
       )
 
+      // Strip the root prefix locally; doing it with `sed` on the remote would
+      // let path metacharacters alter the substitution.
+      const prefix = `${rootPath.replace(/\/+$/, '')}/`
+      const relativeTree = unwrapCommandOutput(tree)
+        .trim()
+        .split('\n')
+        .map((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : line))
+        .join('\n')
+
       const keyFiles = ['package.json', 'Makefile', 'Dockerfile', 'docker-compose.yml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'pom.xml', 'README.md', '.env.example', 'tsconfig.json', 'pyproject.toml']
-      let summary = `Project root: ${rootPath}\n\nTree:\n${unwrapCommandOutput(tree).trim()}\n`
+      let summary = `Project root: ${rootPath}\n\nTree:\n${relativeTree}\n`
       for (const keyFile of keyFiles) {
         try {
-          const content = await sshManager.exec(sessionId, `cat "${safeRoot}/${keyFile}" 2>/dev/null | head -50`)
+          const content = await sshManager.exec(sessionId, `cat ${shellQuote(`${rootPath}/${keyFile}`)} 2>/dev/null | head -50`)
           if (content.trim()) {
             summary += `\n--- ${keyFile} ---\n${unwrapCommandOutput(content).trim()}\n`
           }
@@ -298,8 +301,7 @@ class WorkspaceService {
 
   async runCommand(sessionId: string, rootPath: string, command: string): Promise<string> {
     if (!isRustSession(sessionId)) {
-      const safeRoot = rootPath.replace(/"/g, '\\"')
-      return sshManager.exec(sessionId, `cd "${safeRoot}" && ${command} 2>&1`, 30000)
+      return sshManager.exec(sessionId, `cd ${shellQuote(rootPath)} && ${command} 2>&1`, 30000)
     }
 
     const normalizedCommand = stripCommandChaining(command)

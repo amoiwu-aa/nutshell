@@ -7,6 +7,8 @@ import * as path from 'path'
 
 const SAFE_DOCKER_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$/
 const SAFE_IMAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.\-:/]*$/
+const NETWORK_DRIVERS = ['bridge', 'host', 'overlay', 'macvlan', 'ipvlan', 'none']
+const RESTART_POLICIES = /^(no|always|unless-stopped|on-failure(:\d+)?)$/
 
 function validateDockerParam(value: string, pattern: RegExp, label: string): void {
   if (!value || !pattern.test(value)) {
@@ -170,8 +172,9 @@ class DockerManager {
   async containerAction(sessionId: string, containerId: string, action: string): Promise<string> {
     validateDockerParam(containerId, SAFE_DOCKER_ID, 'container ID')
     if (action.startsWith('exec|')) {
-      const execCmd = action.split('|')[1]
-      return this.exec(sessionId, `docker exec -i "${containerId}" sh -c '${execCmd}' 2>&1`)
+      // Keep everything after the marker: the command may itself contain '|'.
+      const execCmd = action.slice('exec|'.length)
+      return this.exec(sessionId, `docker exec -i ${shellQuote(containerId)} sh -c ${shellQuote(execCmd)} 2>&1`)
     }
     const validActions = ['start', 'stop', 'restart', 'remove', 'pause', 'unpause']
     if (!validActions.includes(action)) {
@@ -282,8 +285,7 @@ class DockerManager {
       throw new Error('Invalid container path')
     }
 
-    const safePath = containerPath.replace(/"/g, '\\"')
-    const output = await this.exec(sessionId, `docker exec "${containerId}" ls -la --time-style=long-iso "${safePath}" 2>&1`, 15000)
+    const output = await this.exec(sessionId, `docker exec ${shellQuote(containerId)} ls -la --time-style=long-iso ${shellQuote(containerPath)} 2>&1`, 15000)
 
     if (output.includes('No such file or directory')) {
       throw new Error(`Path not found: ${containerPath}`)
@@ -330,15 +332,15 @@ class DockerManager {
     // clobbering each other's temp file.
     const remoteTempPath = `${tempDir}/${uniqueTempPrefix()}-${filename}`
 
-    await this.exec(sessionId, `mkdir -p "${tempDir}"`)
+    await this.exec(sessionId, `mkdir -p ${shellQuote(tempDir)}`)
     if (isRustSession(sessionId)) {
       await rustRemoteFS.upload(sessionId, localPath, remoteTempPath)
     } else {
       await sftpManager.upload(sessionId, localPath, remoteTempPath)
     }
 
-    const result = await this.exec(sessionId, `docker cp "${remoteTempPath}" "${containerId}:${containerPath.replace(/"/g, '\\"')}" 2>&1`)
-    await this.exec(sessionId, `rm -f "${remoteTempPath}"`)
+    const result = await this.exec(sessionId, `docker cp ${shellQuote(remoteTempPath)} ${shellQuote(`${containerId}:${containerPath}`)} 2>&1`)
+    await this.exec(sessionId, `rm -f ${shellQuote(remoteTempPath)}`)
     return result
   }
 
@@ -352,8 +354,8 @@ class DockerManager {
     const filename = path.basename(containerPath)
     const remoteTempPath = `${tempDir}/${uniqueTempPrefix()}-${filename}`
 
-    await this.exec(sessionId, `mkdir -p "${tempDir}"`)
-    const result = await this.exec(sessionId, `docker cp "${containerId}:${containerPath.replace(/"/g, '\\"')}" "${remoteTempPath}" 2>&1`)
+    await this.exec(sessionId, `mkdir -p ${shellQuote(tempDir)}`)
+    const result = await this.exec(sessionId, `docker cp ${shellQuote(`${containerId}:${containerPath}`)} ${shellQuote(remoteTempPath)} 2>&1`)
     if (result.includes('No such') || result.includes('Error')) {
       throw new Error(result.trim())
     }
@@ -386,15 +388,18 @@ class DockerManager {
 
   async createNetwork(sessionId: string, name: string, driver: string = 'bridge', subnet?: string): Promise<string> {
     validateDockerParam(name, SAFE_DOCKER_ID, 'network name')
-    let cmd = `docker network create --driver "${driver}" `
-    if (subnet) cmd += `--subnet "${subnet.replace(/[^0-9./]/g, '')}" `
-    cmd += `"${name}" 2>&1`
+    if (!NETWORK_DRIVERS.includes(driver)) {
+      throw new Error(`Invalid network driver: "${driver}"`)
+    }
+    let cmd = `docker network create --driver ${shellQuote(driver)} `
+    if (subnet) cmd += `--subnet ${shellQuote(subnet.replace(/[^0-9./]/g, ''))} `
+    cmd += `${shellQuote(name)} 2>&1`
     return this.exec(sessionId, cmd)
   }
 
   async removeNetwork(sessionId: string, networkId: string): Promise<string> {
     validateDockerParam(networkId, SAFE_DOCKER_ID, 'network ID')
-    return this.exec(sessionId, `docker network rm "${networkId}" 2>&1`)
+    return this.exec(sessionId, `docker network rm ${shellQuote(networkId)} 2>&1`)
   }
 
   async connectContainerToNetwork(sessionId: string, networkId: string, containerId: string): Promise<string> {
@@ -483,8 +488,7 @@ class DockerManager {
     if (isRustSession(sessionId)) {
       return rustRemoteFS.readFile(sessionId, filePath)
     }
-    const safePath = filePath.replace(/"/g, '\\"')
-    return sshManager.exec(sessionId, `cat "${safePath}" 2>&1`, 10000)
+    return sshManager.exec(sessionId, `cat ${shellQuote(filePath)} 2>&1`, 10000)
   }
 
   async saveComposeFile(sessionId: string, filePath: string, content: string): Promise<string> {
@@ -493,21 +497,32 @@ class DockerManager {
       return 'ok'
     }
 
-    const safePath = filePath.replace(/"/g, '\\"')
-    return sshManager.exec(sessionId, `cat > "${safePath}" << 'NUTSHELL_EOF'\n${content}\nNUTSHELL_EOF`, 10000)
+    // base64 keeps the file content out of the shell entirely — a heredoc breaks
+    // apart as soon as the content happens to contain the delimiter line.
+    const encoded = Buffer.from(content, 'utf8').toString('base64')
+    return sshManager.exec(
+      sessionId,
+      `printf '%s' ${shellQuote(encoded)} | base64 -d > ${shellQuote(filePath)}`,
+      10000
+    )
   }
 
   async createContainer(sessionId: string, options: { image: string; name?: string; ports?: string[]; volumes?: string[]; envVars?: string[]; network?: string; restartPolicy?: string }): Promise<string> {
     validateDockerParam(options.image, SAFE_IMAGE_NAME, 'image name')
 
     let cmd = 'docker run -d'
-    if (options.name) { validateDockerParam(options.name, SAFE_DOCKER_ID, 'container name'); cmd += ` --name "${options.name}"` }
-    if (options.restartPolicy) cmd += ` --restart "${options.restartPolicy}"`
-    if (options.network) { validateDockerParam(options.network, SAFE_DOCKER_ID, 'network'); cmd += ` --network "${options.network}"` }
-    for (const portMapping of options.ports || []) cmd += ` -p "${portMapping.replace(/"/g, '')}"`
-    for (const volume of options.volumes || []) cmd += ` -v "${volume.replace(/"/g, '')}"`
-    for (const envVar of options.envVars || []) cmd += ` -e "${envVar.replace(/"/g, '')}"`
-    cmd += ` "${options.image}" 2>&1`
+    if (options.name) { validateDockerParam(options.name, SAFE_DOCKER_ID, 'container name'); cmd += ` --name ${shellQuote(options.name)}` }
+    if (options.restartPolicy) {
+      if (!RESTART_POLICIES.test(options.restartPolicy)) {
+        throw new Error(`Invalid restart policy: "${options.restartPolicy}"`)
+      }
+      cmd += ` --restart ${shellQuote(options.restartPolicy)}`
+    }
+    if (options.network) { validateDockerParam(options.network, SAFE_DOCKER_ID, 'network'); cmd += ` --network ${shellQuote(options.network)}` }
+    for (const portMapping of options.ports || []) cmd += ` -p ${shellQuote(portMapping)}`
+    for (const volume of options.volumes || []) cmd += ` -v ${shellQuote(volume)}`
+    for (const envVar of options.envVars || []) cmd += ` -e ${shellQuote(envVar)}`
+    cmd += ` ${shellQuote(options.image)} 2>&1`
 
     return this.exec(sessionId, cmd, 60000)
   }
