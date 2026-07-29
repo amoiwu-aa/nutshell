@@ -7,7 +7,6 @@ import { registerMonitorHandlers } from './ipc/monitorHandlers'
 import { registerDockerHandlers } from './ipc/dockerHandlers'
 import { registerConfigHandlers } from './ipc/configHandlers'
 import { registerPortForwardHandlers } from './ipc/portForwardHandlers'
-import { registerAIHandlers } from './ipc/aiHandlers'
 import { registerWorkspaceHandlers } from './ipc/workspaceHandlers'
 import { registerSystemHandlers } from './ipc/systemHandlers'
 import { registerRustCoreHandlers } from './ipc/rustCoreHandlers'
@@ -188,7 +187,6 @@ app.whenReady().then(() => {
   registerDockerHandlers()
   registerConfigHandlers()
   registerPortForwardHandlers()
-  registerAIHandlers()
   registerWorkspaceHandlers()
   registerSystemHandlers()
   registerRustCoreHandlers()

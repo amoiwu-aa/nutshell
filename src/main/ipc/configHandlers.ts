@@ -138,34 +138,4 @@ export function registerConfigHandlers(): void {
     }
   })
 
-  ipcMain.handle('config:getAIChatHistory', async (_event, workspacePath: string) => {
-    try { return { success: true, messages: configStore.getAIChatHistory(workspacePath) } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
-
-  ipcMain.handle('config:saveAIChatHistory', async (_event, workspacePath: string, messages: any[]) => {
-    try { configStore.saveAIChatHistory(workspacePath, messages); return { success: true } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
-
-  // --- Conversation CRUD ---
-  ipcMain.handle('config:getConversations', async (_event, workspacePath: string) => {
-    try { return { success: true, conversations: configStore.getConversations(workspacePath) } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
-
-  ipcMain.handle('config:getConversation', async (_event, workspacePath: string, convId: string) => {
-    try { return { success: true, conversation: configStore.getConversation(workspacePath, convId) } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
-
-  ipcMain.handle('config:saveConversation', async (_event, workspacePath: string, conversation: any) => {
-    try { configStore.saveConversation(workspacePath, conversation); return { success: true } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
-
-  ipcMain.handle('config:deleteConversation', async (_event, workspacePath: string, convId: string) => {
-    try { configStore.deleteConversation(workspacePath, convId); return { success: true } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
 }

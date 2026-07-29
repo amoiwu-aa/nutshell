@@ -298,33 +298,6 @@ const api = {
     }
   },
 
-  // AI assistant
-  ai: {
-    chat: (messages: Array<{ role: string; content: string }>) =>
-      ipcRenderer.invoke('ai:chat', messages),
-    generateCommand: (description: string) =>
-      ipcRenderer.invoke('ai:generateCommand', description),
-    explainCommand: (command: string) =>
-      ipcRenderer.invoke('ai:explainCommand', command),
-    diagnoseError: (errorOutput: string) =>
-      ipcRenderer.invoke('ai:diagnoseError', errorOutput),
-    codeGenerate: (fileContent: string, language: string, instruction: string) =>
-      ipcRenderer.invoke('ai:codeGenerate', fileContent, language, instruction),
-    codeExplain: (code: string, language: string) =>
-      ipcRenderer.invoke('ai:codeExplain', code, language),
-    codeRefactor: (code: string, language: string, instruction: string) =>
-      ipcRenderer.invoke('ai:codeRefactor', code, language, instruction),
-    codeFix: (code: string, language: string, error: string) =>
-      ipcRenderer.invoke('ai:codeFix', code, language, error),
-    agentChat: (messages: any[], sessionId: string, rootPath: string, maxIterations?: number) =>
-      ipcRenderer.invoke('ai:agentChat', messages, sessionId, rootPath, maxIterations),
-    onToolCall: (callback: (name: string, args: any) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, name: string, args: any) => callback(name, args)
-      ipcRenderer.on('ai:toolCall', handler)
-      return () => ipcRenderer.removeListener('ai:toolCall', handler)
-    }
-  },
-
   // Workspace
   workspace: {
     listDirectory: (sessionId: string, path: string) =>
@@ -407,13 +380,7 @@ const api = {
     importSnippets: (snippets: any[], mode: 'merge' | 'replace') =>
       ipcRenderer.invoke('config:importSnippets', snippets, mode),
     getSessionState: () => ipcRenderer.invoke('config:getSessionState'),
-    saveSessionState: (state: any) => ipcRenderer.invoke('config:saveSessionState', state),
-    getAIChatHistory: (workspacePath: string) => ipcRenderer.invoke('config:getAIChatHistory', workspacePath),
-    saveAIChatHistory: (workspacePath: string, messages: any[]) => ipcRenderer.invoke('config:saveAIChatHistory', workspacePath, messages),
-    getConversations: (workspacePath: string) => ipcRenderer.invoke('config:getConversations', workspacePath),
-    getConversation: (workspacePath: string, convId: string) => ipcRenderer.invoke('config:getConversation', workspacePath, convId),
-    saveConversation: (workspacePath: string, conversation: any) => ipcRenderer.invoke('config:saveConversation', workspacePath, conversation),
-    deleteConversation: (workspacePath: string, convId: string) => ipcRenderer.invoke('config:deleteConversation', workspacePath, convId)
+    saveSessionState: (state: any) => ipcRenderer.invoke('config:saveSessionState', state)
   }
 }
 
