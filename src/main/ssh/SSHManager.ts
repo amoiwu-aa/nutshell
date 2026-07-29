@@ -13,6 +13,8 @@ import {
   SSH_HIGH_WATER_MARK,
   DEFAULT_CONNECTION_TUNING
 } from './connectionTuning'
+import { knownHosts, fingerprintHostKey, HostKeyMismatchError } from './KnownHosts'
+import { promises as fsPromises } from 'fs'
 
 const DEFAULT_SSH_TERM = 'xterm-256color'
 
@@ -71,6 +73,7 @@ const EXEC_TIMEOUT_MS = DEFAULT_CONNECTION_TUNING.execTimeoutMs
 class SSHManager {
   private sessions: Map<string, SSHSession> = new Map()
   private connectingLocks: Map<string, Promise<string>> = new Map()
+  private reconnecting: Set<string> = new Set()
 
   /**
    * Build ssh2 connect options from a session config and the centralized tuning.
@@ -85,7 +88,8 @@ class SSHManager {
       password?: string
       passphrase?: string
     },
-    privateKeyData?: Buffer
+    privateKeyData?: Buffer,
+    onHostKeyError?: (error: Error) => void
   ): Record<string, unknown> {
     const tuning = getConnectionTuning()
     const options: Record<string, unknown> = {
@@ -96,7 +100,18 @@ class SSHManager {
       keepaliveCountMax: tuning.keepaliveCountMax,
       readyTimeout: tuning.readyTimeoutMs,
       highWaterMark: SSH_HIGH_WATER_MARK,
-      algorithms: { cipher: [...PREFERRED_CIPHERS] }
+      algorithms: { cipher: [...PREFERRED_CIPHERS] },
+      // ssh2 only lets us answer yes/no here, so the rejection reason is handed
+      // back to the caller to surface instead of a generic handshake failure.
+      hostVerifier: (key: Buffer): boolean => {
+        try {
+          knownHosts.check(config.host, config.port, fingerprintHostKey(key))
+          return true
+        } catch (error) {
+          onHostKeyError?.(error as Error)
+          return false
+        }
+      }
     }
 
     if (config.authType === 'password') {
@@ -157,14 +172,14 @@ class SSHManager {
 
     let privateKeyData: Buffer | undefined
     if (config.authType === 'key' || config.authType === 'keyWithPassphrase') {
-      const fs = require('fs')
-      privateKeyData = await fs.promises.readFile(config.privateKeyPath!)
+      privateKeyData = await fsPromises.readFile(config.privateKeyPath!)
     }
 
     const client = new Client()
 
     return new Promise((resolve, reject) => {
       const tuning = getConnectionTuning()
+      const hostKeyError: { value: Error | null } = { value: null }
       const connectOptions = this.buildConnectOptions(
         {
           host: config.host,
@@ -174,7 +189,8 @@ class SSHManager {
           password: config.password,
           passphrase: config.passphrase
         },
-        privateKeyData
+        privateKeyData,
+        (error) => { hostKeyError.value = error }
       )
 
       const onReady = (): void => {
@@ -214,7 +230,7 @@ class SSHManager {
         if (settled) return
         settled = true
         cleanup()
-        reject(err)
+        reject(hostKeyError.value ?? err)
       }
 
       const onClose = (): void => {
@@ -268,63 +284,86 @@ class SSHManager {
     try { serverMonitor.stop(sessionId, true) } catch { /* ignore */ }
   }
 
+  /**
+   * Drive reconnection for a dropped session. At most one loop runs per session
+   * — `close` and `error` both fire for a single drop and would otherwise start
+   * competing chains that each bump `reconnectAttempts`.
+   */
   private async attemptReconnect(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId)
-    if (!session || session.connected) return
-
-    const tuning = getConnectionTuning()
-    session.reconnectAttempts++
-    const delay = computeReconnectDelay(session.reconnectAttempts, tuning)
-
-    this.notifyReconnecting(sessionId, session.reconnectAttempts, delay)
-
-    await new Promise((resolve) => setTimeout(resolve, delay))
-
-    // Check if session still exists and still wants reconnect
-    const currentSession = this.sessions.get(sessionId)
-    if (!currentSession || currentSession.connected || !currentSession.autoReconnect) return
+    if (this.reconnecting.has(sessionId)) return
+    this.reconnecting.add(sessionId)
 
     try {
-      const newClient = new Client()
+      for (;;) {
+        const session = this.sessions.get(sessionId)
+        if (!session || session.connected || !session.autoReconnect) return
 
-      let reconnectKeyData: Buffer | undefined
-      if (currentSession.config.authType !== 'password' && currentSession.config.privateKeyPath) {
-        const fs = require('fs')
-        reconnectKeyData = await fs.promises.readFile(currentSession.config.privateKeyPath)
+        const tuning = getConnectionTuning()
+        session.reconnectAttempts++
+        if (!shouldRetryReconnect(session.reconnectAttempts, tuning)) {
+          this.notifyError(sessionId, '自动重连失败，已达最大重试次数')
+          return
+        }
+
+        const delay = computeReconnectDelay(session.reconnectAttempts, tuning)
+        this.notifyReconnecting(sessionId, session.reconnectAttempts, delay)
+        await new Promise((resolve) => setTimeout(resolve, delay))
+
+        const currentSession = this.sessions.get(sessionId)
+        if (!currentSession || currentSession.connected || !currentSession.autoReconnect) return
+
+        try {
+          await this.reconnectOnce(sessionId, currentSession)
+          return
+        } catch (error) {
+          if (error instanceof HostKeyMismatchError) {
+            // Retrying can't fix a changed host key, and looping would keep
+            // handing credentials to whatever is answering.
+            currentSession.autoReconnect = false
+            this.notifyError(sessionId, error.message)
+            return
+          }
+        }
       }
-
-      await new Promise<void>((resolve, reject) => {
-        const connectOptions = this.buildConnectOptions(currentSession.config, reconnectKeyData)
-
-        newClient.once('ready', () => {
-          // Replace old client
-          try { currentSession.client.end() } catch { /* ignore */ }
-          currentSession.client = newClient
-          currentSession.connected = true
-          currentSession.reconnectAttempts = 0
-
-          // Re-setup close/error handlers
-          newClient.on('close', () => this.handleSessionClose(sessionId))
-          newClient.on('error', (err) => this.handleSessionError(sessionId, err))
-
-          this.notifyReconnected(sessionId)
-
-          // Re-open shell if needed
-          this.openShell(sessionId).catch(() => { })
-          resolve()
-        })
-
-        newClient.once('error', (err) => reject(err))
-        newClient.connect(connectOptions)
-      })
-    } catch {
-      // Retry again if still permitted by the tuning policy
-      if (shouldRetryReconnect(session.reconnectAttempts + 1, tuning)) {
-        this.attemptReconnect(sessionId)
-      } else {
-        this.notifyError(sessionId, '自动重连失败，已达最大重试次数')
-      }
+    } finally {
+      this.reconnecting.delete(sessionId)
     }
+  }
+
+  private async reconnectOnce(sessionId: string, session: SSHSession): Promise<void> {
+    const newClient = new Client()
+
+    let reconnectKeyData: Buffer | undefined
+    if (session.config.authType !== 'password' && session.config.privateKeyPath) {
+      reconnectKeyData = await fsPromises.readFile(session.config.privateKeyPath)
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const hostKeyError: { value: Error | null } = { value: null }
+      const connectOptions = this.buildConnectOptions(
+        session.config,
+        reconnectKeyData,
+        (error) => { hostKeyError.value = error }
+      )
+
+      newClient.once('ready', () => {
+        try { session.client.end() } catch { /* ignore */ }
+        session.client = newClient
+        session.connected = true
+        session.reconnectAttempts = 0
+
+        newClient.on('close', () => this.handleSessionClose(sessionId))
+        newClient.on('error', (err) => this.handleSessionError(sessionId, err))
+
+        this.notifyReconnected(sessionId)
+
+        this.openShell(sessionId).catch(() => { })
+        resolve()
+      })
+
+      newClient.once('error', (err) => reject(hostKeyError.value ?? err))
+      newClient.connect(connectOptions)
+    })
   }
 
   async openShell(

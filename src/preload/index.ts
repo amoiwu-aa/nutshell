@@ -397,6 +397,9 @@ const api = {
     getSnippets: () => ipcRenderer.invoke('config:getSnippets'),
     saveSnippet: (snippet: any) => ipcRenderer.invoke('config:saveSnippet', snippet),
     deleteSnippet: (id: string) => ipcRenderer.invoke('config:deleteSnippet', id),
+    listHostKeys: () => ipcRenderer.invoke('config:listHostKeys'),
+    forgetHostKey: (host: string, port: number) =>
+      ipcRenderer.invoke('config:forgetHostKey', host, port),
     getSettings: () => ipcRenderer.invoke('config:getSettings'),
     saveSettings: (settings: any) => ipcRenderer.invoke('config:saveSettings', settings),
     selectFile: (options?: any) => ipcRenderer.invoke('config:selectFile', options),

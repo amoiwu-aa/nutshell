@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, Sun, Moon, Monitor, Type, Palette } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, Sun, Moon, Monitor, Type, Palette, ShieldCheck, Trash2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { TerminalDiagnostics } from './TerminalDiagnostics'
@@ -130,6 +130,7 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
             {[
               { id: 'appearance', label: '外观', icon: Palette },
               { id: 'terminal', label: '终端', icon: Type },
+              { id: 'security', label: '安全', icon: ShieldCheck },
               { id: 'about', label: '关于', icon: Monitor }
             ].map((section) => (
               <button
@@ -457,6 +458,8 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
               </div>
             )}
 
+            {activeSection === 'security' && <HostKeysSection />}
+
             {activeSection === 'about' && (
               <div className="space-y-6">
                 <div className="text-center py-6">
@@ -502,6 +505,79 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+interface HostKeyEntry {
+  id: string
+  host: string
+  port: number
+  fingerprint: string
+  lastSeen: number
+}
+
+function HostKeysSection() {
+  const [hostKeys, setHostKeys] = useState<HostKeyEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    const result = await window.api.config.listHostKeys()
+    setHostKeys(result?.success ? result.hostKeys : [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { reload() }, [reload])
+
+  const handleForget = async (entry: HostKeyEntry) => {
+    if (!confirm(`移除 ${entry.id} 的密钥记录？\n下次连接时将重新信任服务器出示的密钥。`)) return
+    await window.api.config.forgetHostKey(entry.host, entry.port)
+    reload()
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-sm font-medium mb-1">已信任的主机密钥</h3>
+        <p className="text-xs text-muted-foreground">
+          首次连接时会记住服务器的密钥指纹，之后若指纹变化会中断连接以防中间人攻击。
+          服务器重装或更换密钥后，请在此移除对应记录。
+        </p>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">加载中…</p>
+      ) : hostKeys.length === 0 ? (
+        <p className="text-sm text-muted-foreground">暂无记录，连接服务器后会自动添加。</p>
+      ) : (
+        <div className="space-y-2">
+          {hostKeys.map((entry) => (
+            <div
+              key={entry.id}
+              className="flex items-center justify-between gap-3 p-3 border border-border rounded-lg"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">{entry.id}</div>
+                <div className="text-xs text-muted-foreground font-mono truncate">
+                  {entry.fingerprint}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  最近连接：{new Date(entry.lastSeen).toLocaleString()}
+                </div>
+              </div>
+              <button
+                onClick={() => handleForget(entry)}
+                className="p-2 rounded-md hover:bg-destructive/10 text-destructive shrink-0"
+                title="移除记录"
+                aria-label={`移除 ${entry.id} 的密钥记录`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

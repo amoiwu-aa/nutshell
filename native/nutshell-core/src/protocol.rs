@@ -20,6 +20,9 @@ pub struct SshConnectParams {
     pub private_key_path: Option<String>,
     pub passphrase: Option<String>,
     pub ai_compatibility_mode: Option<bool>,
+    /// SHA256 fingerprint this host presented before, supplied by the TS side
+    /// which owns known_hosts. `None` means first contact.
+    pub expected_host_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

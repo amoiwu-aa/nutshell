@@ -1,7 +1,25 @@
 import { ipcMain, dialog } from 'electron'
 import { configStore } from '../store/ConfigStore'
+import { knownHosts } from '../ssh/KnownHosts'
 
 export function registerConfigHandlers(): void {
+  ipcMain.handle('config:listHostKeys', async () => {
+    try {
+      return { success: true, hostKeys: knownHosts.list() }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('config:forgetHostKey', async (_event, host: string, port: number) => {
+    try {
+      knownHosts.forget(host, port)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('config:getConnections', async () => {
     try {
       return { success: true, connections: configStore.getConnections() }

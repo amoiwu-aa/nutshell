@@ -67,11 +67,33 @@ struct SessionInfo {
     password: Option<String>,
     private_key_path: Option<String>,
     passphrase: Option<String>,
+    host_key_fingerprint: Option<String>,
 }
 
 #[derive(Clone)]
 struct ClientHandler {
     remote_forwards: Arc<Mutex<HashMap<(String, u32), (String, u16)>>>,
+    /// Fingerprint the host is expected to present; `None` on first contact.
+    expected_host_key: Option<String>,
+    /// Filled in during the handshake so the caller can record what was seen.
+    observed_host_key: Arc<Mutex<Option<String>>>,
+}
+
+impl ClientHandler {
+    fn new(
+        remote_forwards: Arc<Mutex<HashMap<(String, u32), (String, u16)>>>,
+        expected_host_key: Option<String>,
+    ) -> (Self, Arc<Mutex<Option<String>>>) {
+        let observed_host_key = Arc::new(Mutex::new(None));
+        (
+            Self {
+                remote_forwards,
+                expected_host_key,
+                observed_host_key: observed_host_key.clone(),
+            },
+            observed_host_key,
+        )
+    }
 }
 
 impl client::Handler for ClientHandler {
@@ -79,9 +101,18 @@ impl client::Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::ssh_key::PublicKey,
+        server_public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        let fingerprint = server_public_key
+            .fingerprint(russh::keys::ssh_key::HashAlg::Sha256)
+            .to_string();
+        *self.observed_host_key.lock().await = Some(fingerprint.clone());
+
+        match self.expected_host_key.as_deref() {
+            // First contact: accept and let the TS side persist what we saw.
+            None => Ok(true),
+            Some(expected) => Ok(expected == fingerprint),
+        }
     }
 
     async fn server_channel_open_forwarded_tcpip(
@@ -229,7 +260,10 @@ async fn handle_request(request: CoreRequest, sessions: Sessions, sftp_cache: Sf
             };
 
             match connect_session(params, sessions, sftp_cache, output_tx).await {
-                Ok(session_id) => CoreResponse::success(request.id, json!({ "sessionId": session_id })),
+                Ok((session_id, host_key_fingerprint)) => CoreResponse::success(
+                    request.id,
+                    json!({ "sessionId": session_id, "hostKeyFingerprint": host_key_fingerprint }),
+                ),
                 Err(error) => CoreResponse::error(request.id, "ssh_connect_failed", format!("{error:#}")),
             }
         }
@@ -720,7 +754,7 @@ async fn connect_session(
     sessions: Sessions,
     sftp_cache: SftpCache,
     output_tx: OutputSender,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(String, Option<String>)> {
     let remote_forwards = Arc::new(Mutex::new(HashMap::new()));
     let config = Arc::new(client::Config {
         inactivity_timeout: None,
@@ -728,9 +762,28 @@ async fn connect_session(
         keepalive_max: 3,
         ..Default::default()
     });
-    let mut handle = client::connect(config, (params.host.as_str(), params.port), ClientHandler { remote_forwards: remote_forwards.clone() })
-        .await
-        .context("Failed to establish russh client connection")?;
+    let (handler, observed_host_key) =
+        ClientHandler::new(remote_forwards.clone(), params.expected_host_key.clone());
+    let mut handle = match client::connect(config, (params.host.as_str(), params.port), handler).await {
+        Ok(handle) => handle,
+        Err(error) => {
+            // Distinguish a rejected host key from a plain network failure so
+            // the UI can warn about a possible MITM instead of just retrying.
+            let observed = observed_host_key.lock().await.clone();
+            if let (Some(expected), Some(actual)) =
+                (params.expected_host_key.as_deref(), observed.as_deref())
+            {
+                if expected != actual {
+                    return Err(anyhow!(
+                        "HOST_KEY_MISMATCH: expected {expected}, server presented {actual}"
+                    ));
+                }
+            }
+            return Err(anyhow::Error::new(error)
+                .context("Failed to establish russh client connection"));
+        }
+    };
+    let host_key_fingerprint = observed_host_key.lock().await.clone();
 
     match params.auth_type.as_str() {
         "password" => {
@@ -814,6 +867,7 @@ async fn connect_session(
                     password: params.password.clone(),
                     private_key_path: params.private_key_path.clone(),
                     passphrase: params.passphrase.clone(),
+                    host_key_fingerprint: host_key_fingerprint.clone(),
                 },
             },
         );
@@ -888,7 +942,7 @@ async fn connect_session(
         }
     });
 
-    Ok(params.session_id)
+    Ok((params.session_id, host_key_fingerprint))
 }
 
 async fn disconnect_session(session_id: &str, sessions: Sessions, sftp_cache: SftpCache, forwards: Forwards, output_tx: OutputSender) -> Result<(), String> {
@@ -1949,10 +2003,14 @@ async fn create_authenticated_handle(session: &SessionInfo) -> anyhow::Result<Ha
         keepalive_max: 3,
         ..Default::default()
     });
+    // Side connections must reach the same host the session was established
+    // with, so the fingerprint recorded at connect time is required here.
+    let (handler, _observed) =
+        ClientHandler::new(remote_forwards, session.host_key_fingerprint.clone());
     let mut handle = client::connect(
         config,
         (session.host.as_str(), session.port),
-        ClientHandler { remote_forwards },
+        handler,
     )
         .await
         .context("Failed to establish russh client connection")?;

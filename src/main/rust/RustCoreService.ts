@@ -7,6 +7,7 @@ import {
   computeReconnectDelay,
   shouldRetryReconnect
 } from '../ssh/connectionTuning'
+import { knownHosts, HostKeyMismatchError, hostKeyMismatchMessage } from '../ssh/KnownHosts'
 
 // --- Rust sidecar supervision (crash recovery) ---
 const RUST_CORE_MAX_RESTART_ATTEMPTS = 8
@@ -613,17 +614,38 @@ class RustCoreService {
     this.sessionConfigs.set(config.sessionId, config)
     this.intentionalDisconnects.delete(config.sessionId)
 
-    const result = await this.request<{ sessionId: string }>('ssh.connect', {
-      session_id: config.sessionId,
-      host: config.host,
-      port: config.port,
-      username: config.username,
-      auth_type: config.authType,
-      password: config.password,
-      private_key_path: config.privateKeyPath,
-      passphrase: config.passphrase,
-      ai_compatibility_mode: config.aiCompatibilityMode ?? false
-    }, 15000)
+    // known_hosts lives on this side; the core only compares what we hand it.
+    const expectedHostKey = knownHosts.getExpected(config.host, config.port)
+
+    let result: { sessionId: string; hostKeyFingerprint?: string | null }
+    try {
+      result = await this.request<{ sessionId: string; hostKeyFingerprint?: string | null }>('ssh.connect', {
+        session_id: config.sessionId,
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        auth_type: config.authType,
+        password: config.password,
+        private_key_path: config.privateKeyPath,
+        passphrase: config.passphrase,
+        ai_compatibility_mode: config.aiCompatibilityMode ?? false,
+        expected_host_key: expectedHostKey
+      }, 15000)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const mismatch = /HOST_KEY_MISMATCH: expected (\S+), server presented (\S+)/.exec(message)
+      if (mismatch) {
+        throw new HostKeyMismatchError(
+          hostKeyMismatchMessage(config.host, config.port, mismatch[1], mismatch[2])
+        )
+      }
+      throw error
+    }
+
+    if (result.hostKeyFingerprint) {
+      // Records the key on first contact; throws if it somehow changed mid-flight.
+      knownHosts.check(config.host, config.port, result.hostKeyFingerprint)
+    }
     this.knownSshSessions.add(result.sessionId)
     this.activeSshSessions.add(result.sessionId)
     this.sessionShellClosed.delete(result.sessionId)
@@ -905,6 +927,13 @@ class RustCoreService {
           this.broadcast('ssh:reconnected', sessionId)
           return
         } catch (error) {
+          if (error instanceof HostKeyMismatchError) {
+            // Retrying can't fix a changed host key, and looping would keep
+            // handing credentials to whatever is answering.
+            this.sessionConfigs.delete(sessionId)
+            this.broadcast('ssh:error', sessionId, error.message)
+            return
+          }
           console.warn(`[rust-core] reconnect attempt ${attempt} for ${sessionId} failed`, error)
           // Fall through to the next backoff iteration.
         }
