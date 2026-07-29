@@ -13,7 +13,6 @@ const SnippetManager = lazy(() => import('./components/snippet/SnippetManager').
 const MonitorPanel = lazy(() => import('./components/monitor/MonitorPanel').then(m => ({ default: m.MonitorPanel })))
 const BottomPanel = lazy(() => import('./components/layout/BottomPanel').then(m => ({ default: m.BottomPanel })))
 const SettingsDialog = lazy(() => import('./components/settings/SettingsDialog').then(m => ({ default: m.SettingsDialog })))
-const ScriptWorkshop = lazy(() => import('./components/ai/ScriptWorkshop').then(m => ({ default: m.ScriptWorkshop })))
 
 import { ToastProvider, useToast } from './components/ui/Toast'
 import { useConnectionStore, type ConnectionConfig, type Tab } from './stores/connectionStore'
@@ -38,7 +37,6 @@ function AppContent() {
   const { toast } = useToast()
   const [showSnippets, setShowSnippets] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showScriptWorkshop, setShowScriptWorkshop] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const zenMode = useConnectionStore((state) => state.zenMode)
   const setZenMode = useConnectionStore((state) => state.setZenMode)
@@ -202,10 +200,11 @@ function AppContent() {
     const handleOpen = async (e: CustomEvent<ConnectionConfig>) => {
       const config = e.detail
       const tabId = uuidv4()
+      const sessionId = uuidv4()
 
       setConnecting(true)
       try {
-        const result = await window.api.ssh.connect({ ...config, aiCompatibilityMode })
+        const result = await window.api.ssh.connect({ ...config, id: sessionId, aiCompatibilityMode })
         if (result.success) {
           const terminalTab: Tab = {
             id: tabId,
@@ -288,7 +287,6 @@ function AppContent() {
       useConnectionStore.getState().setBottomPanelActiveTab('ports')
     }
     const handleOpenSettings = () => setShowSettings(true)
-    const handleOpenScriptWorkshop = () => setShowScriptWorkshop(true)
     const handleToggleBottomPanel = () => {
       const current = useConnectionStore.getState().bottomPanelVisible
       useConnectionStore.getState().setBottomPanelVisible(!current)
@@ -322,7 +320,6 @@ function AppContent() {
     window.addEventListener('app:openSnippets', handleOpenSnippets)
     window.addEventListener('app:openPortForward', handleOpenPortForward)
     window.addEventListener('app:openSettings', handleOpenSettings)
-    window.addEventListener('app:openScriptWorkshop', handleOpenScriptWorkshop)
     window.addEventListener('app:toggleBottomPanel', handleToggleBottomPanel)
     window.addEventListener('app:toggleMonitorPanel', handleToggleMonitorPanel)
     window.addEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as unknown as EventListener)
@@ -336,7 +333,6 @@ function AppContent() {
       window.removeEventListener('app:openSnippets', handleOpenSnippets)
       window.removeEventListener('app:openPortForward', handleOpenPortForward)
       window.removeEventListener('app:openSettings', handleOpenSettings)
-      window.removeEventListener('app:openScriptWorkshop', handleOpenScriptWorkshop)
       window.removeEventListener('app:toggleBottomPanel', handleToggleBottomPanel)
       window.removeEventListener('app:toggleMonitorPanel', handleToggleMonitorPanel)
       window.removeEventListener('app:openDetailedMonitor', handleOpenDetailedMonitor as unknown as EventListener)
@@ -506,9 +502,6 @@ function AppContent() {
         )}
         {showSettings && (
           <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} sessionId={activeTab?.sessionId} />
-        )}
-        {showScriptWorkshop && (
-          <ScriptWorkshop isOpen={showScriptWorkshop} onClose={() => setShowScriptWorkshop(false)} sessionId={activeTab?.sessionId} />
         )}
       </Suspense>
 

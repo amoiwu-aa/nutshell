@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Sun, Moon, Monitor, Type, Palette, Sparkles, Eye, EyeOff } from 'lucide-react'
+import { X, Sun, Moon, Monitor, Type, Palette } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { TerminalDiagnostics } from './TerminalDiagnostics'
@@ -130,7 +130,6 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
             {[
               { id: 'appearance', label: '外观', icon: Palette },
               { id: 'terminal', label: '终端', icon: Type },
-              { id: 'ai', label: 'AI 助手', icon: Sparkles },
               { id: 'about', label: '关于', icon: Monitor }
             ].map((section) => (
               <button
@@ -458,10 +457,6 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
               </div>
             )}
 
-            {activeSection === 'ai' && (
-              <AISettingsSection settings={settings} setSettings={setSettings} />
-            )}
-
             {activeSection === 'about' && (
               <div className="space-y-6">
                 <div className="text-center py-6">
@@ -506,128 +501,6 @@ export function SettingsDialog({ isOpen, onClose, sessionId }: SettingsDialogPro
             )}
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-// AI Settings sub-component
-function AISettingsSection({ settings, setSettings }: { settings: any; setSettings: (s: any) => void }) {
-  const ai = settings.ai || { provider: 'openai', apiKey: '', apiUrl: '', model: '' }
-  const [showKey, setShowKey] = useState(false)
-
-  const updateAI = (updates: Partial<typeof ai>) => {
-    setSettings({ ai: { ...ai, ...updates } })
-  }
-
-  const providers = [
-    { id: 'openai', name: 'OpenAI', defaultUrl: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'] },
-    { id: 'claude', name: 'Anthropic Claude', defaultUrl: 'https://api.anthropic.com/v1/messages', models: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'] },
-    { id: 'deepseek', name: 'DeepSeek', defaultUrl: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-chat', 'deepseek-coder'] },
-    { id: 'custom', name: '自定义 (OpenAI 兼容)', defaultUrl: '', models: [] }
-  ]
-
-  const currentProvider = providers.find((p) => p.id === ai.provider) || providers[0]
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="text-sm font-medium mb-1">AI 助手</h3>
-        <p className="text-xs text-muted-foreground mb-4">在终端中点击 AI 按钮打开助手面板，支持自然语言生成命令、解释命令和错误诊断</p>
-      </div>
-
-      {/* Provider */}
-      <div>
-        <label className="block text-sm font-medium mb-1.5">AI 服务商</label>
-        <select
-          value={ai.provider}
-          onChange={(e) => {
-            const p = providers.find((p) => p.id === e.target.value) || providers[0]
-            updateAI({ provider: e.target.value, apiUrl: '', model: p.models[0] || '' })
-          }}
-          className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring"
-        >
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* API Key */}
-      <div>
-        <label className="block text-sm font-medium mb-1.5">API Key</label>
-        <div className="relative">
-          <input
-            type={showKey ? 'text' : 'password'}
-            value={ai.apiKey}
-            onChange={(e) => updateAI({ apiKey: e.target.value })}
-            placeholder="sk-..."
-            className="w-full px-3 py-2 pr-10 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring font-mono"
-          />
-          <button onClick={() => setShowKey(!showKey)} className="absolute right-3 top-1/2 -translate-y-1/2">
-            {showKey ? <EyeOff className="w-4 h-4 text-muted-foreground" /> : <Eye className="w-4 h-4 text-muted-foreground" />}
-          </button>
-        </div>
-      </div>
-
-      {/* API URL */}
-      <div>
-        <label className="block text-sm font-medium mb-1.5">API 地址 {ai.provider !== 'custom' && <span className="text-xs text-muted-foreground">(留空使用默认)</span>}</label>
-        <input
-          type="text"
-          value={ai.apiUrl}
-          onChange={(e) => updateAI({ apiUrl: e.target.value })}
-          placeholder={currentProvider.defaultUrl || '输入 OpenAI 兼容的 API 地址'}
-          className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring font-mono"
-        />
-      </div>
-
-      {/* Model */}
-      <div>
-        <label className="block text-sm font-medium mb-1.5">模型</label>
-        {currentProvider.models.length > 0 ? (
-          <select
-            value={ai.model || currentProvider.models[0]}
-            onChange={(e) => updateAI({ model: e.target.value })}
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring"
-          >
-            {currentProvider.models.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        ) : (
-          <input
-            type="text"
-            value={ai.model}
-            onChange={(e) => updateAI({ model: e.target.value })}
-            placeholder="模型名称"
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-        )}
-      </div>
-
-      {/* Max Tokens for custom provider */}
-      {ai.provider === 'custom' && (
-        <div>
-          <label className="block text-sm font-medium mb-1.5">上下文上限 (tokens)</label>
-          <input
-            type="number"
-            value={ai.maxTokens || 128000}
-            onChange={(e) => updateAI({ maxTokens: parseInt(e.target.value) || 128000 })}
-            placeholder="128000"
-            className="w-full px-3 py-2 bg-background border border-input rounded-lg text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-          <p className="text-xs text-muted-foreground mt-1">自定义模型的上下文窗口大小，用于 AI 面板的进度条显示</p>
-        </div>
-      )}
-
-      {/* Status */}
-      <div className="px-3 py-2 bg-secondary rounded-lg text-xs text-muted-foreground">
-        {ai.apiKey ? (
-          <span className="text-green-500">已配置 {currentProvider.name} - {ai.model || currentProvider.models[0] || '默认模型'}</span>
-        ) : (
-          <span>未配置 API Key，AI 助手功能不可用</span>
-        )}
       </div>
     </div>
   )

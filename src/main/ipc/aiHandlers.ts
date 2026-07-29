@@ -67,10 +67,6 @@ export function registerAIHandlers(): void {
     try { return { success: true, content: await aiService.codeFix(code, language, error) } }
     catch (e: any) { return { success: false, error: e.message } }
   })
-  ipcMain.handle('ai:generateScript', async (_event, type: string, description: string) => {
-    try { return { success: true, content: await aiService.generateScript(type, description) } }
-    catch (e: any) { return { success: false, error: e.message } }
-  })
 
   // Agent Chat with tool execution
   ipcMain.handle('ai:agentChat', async (_event, messages: any[], sessionId: string, rootPath: string, maxIterations?: number) => {

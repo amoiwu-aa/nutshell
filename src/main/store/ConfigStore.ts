@@ -66,6 +66,13 @@ interface AppSettings {
   sidebarWidth: number
   autoReconnect: boolean
   maxReconnectAttempts: number
+  // --- Connection tuning (optional; see src/main/ssh/connectionTuning.ts) ---
+  keepaliveIntervalMs?: number
+  keepaliveCountMax?: number
+  readyTimeoutMs?: number
+  execTimeoutMs?: number
+  reconnectBaseDelayMs?: number
+  reconnectMaxDelayMs?: number
   monitorModules: MonitorModules
   ai: {
     provider: string
@@ -128,7 +135,14 @@ const defaultSettings: AppSettings = {
   language: 'zh-CN',
   sidebarWidth: 260,
   autoReconnect: true,
-  maxReconnectAttempts: 5,
+  // 0 => retry indefinitely with capped backoff (see connectionTuning.ts)
+  maxReconnectAttempts: 0,
+  keepaliveIntervalMs: 15000,
+  keepaliveCountMax: 6,
+  readyTimeoutMs: 30000,
+  execTimeoutMs: 30000,
+  reconnectBaseDelayMs: 1000,
+  reconnectMaxDelayMs: 15000,
   monitorModules: defaultMonitorModules,
   ai: { provider: 'openai', apiKey: '', apiUrl: '', model: '' }
 }

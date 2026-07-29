@@ -26,7 +26,7 @@ export function getTerminalInteractionProfileConfig(
       chunkSize: 8192,
       maxPendingBytes: 4 * 1024 * 1024,
       maxPendingWhenHidden: 1024 * 1024,
-      rendererMode: null
+      rendererMode: 'canvas'
     }
   }
 
@@ -96,4 +96,18 @@ export function detectHeavyCliOutput(output: string): boolean {
     text.includes('ctrl+p commands') ||
     text.includes('esc interrupt')
   )
+}
+
+export function detectShellPromptReturn(output: string): boolean {
+  // Only trigger on short output chunks that look like a bare shell prompt
+  // after the heavy-cli tool has fully exited (not mid-output)
+  const trimmed = output.trimEnd()
+  if (trimmed.length > 80) return false
+  // Must end with a typical prompt suffix and contain a username@host pattern
+  return /[\w@][\w.\-]+[:#~]\s*[\$#]\s*$/.test(trimmed) &&
+    !output.includes('claude') &&
+    !output.includes('opencode') &&
+    !output.includes('codex') &&
+    !output.includes('Bash(') &&
+    !output.includes('Waiting')
 }

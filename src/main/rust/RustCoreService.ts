@@ -2,6 +2,19 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { app, BrowserWindow } from 'electron'
+import {
+  getConnectionTuning,
+  computeReconnectDelay,
+  shouldRetryReconnect
+} from '../ssh/connectionTuning'
+
+// --- Rust sidecar supervision (crash recovery) ---
+const RUST_CORE_MAX_RESTART_ATTEMPTS = 8
+const RUST_CORE_RESTART_BASE_DELAY_MS = 500
+const RUST_CORE_RESTART_MAX_DELAY_MS = 10_000
+// Only clear the restart streak after the core has stayed up this long, so a
+// crash-on-startup loop can't reset the backoff every few hundred milliseconds.
+const RUST_CORE_STABLE_UPTIME_MS = 30_000
 
 type PendingRequest = {
   resolve: (value: any) => void
@@ -225,10 +238,15 @@ class RustCoreService {
   private sessionShellClosed = new Set<string>()
   private knownSshSessions = new Set<string>()
   private activeSshSessions = new Set<string>()
+  // --- Auto-reconnect state (the Rust core itself has no reconnect logic) ---
+  private sessionConfigs = new Map<string, RustSshConnectConfig>()
+  private intentionalDisconnects = new Set<string>()
+  private reconnecting = new Set<string>()
   private readyVersion: string | null = null
   private startupError: Error | null = null
   private currentLaunchSource = 'unknown'
   private restartAttempts = 0
+  private healthyResetTimer: ReturnType<typeof setTimeout> | null = null
   private manuallyStopped = false
   private starting: Promise<void> | null = null
 
@@ -281,6 +299,11 @@ class RustCoreService {
       console.warn(`[rust-core] exited with code=${code} signal=${signal}`)
       this.process = null
 
+      // Sessions worth restoring once the core is back (skip intentional disconnects).
+      const sessionsToReconnect = Array.from(this.sessionConfigs.keys()).filter(
+        (sessionId) => !this.intentionalDisconnects.has(sessionId)
+      )
+
       // Notify renderer that all Rust SSH sessions are gone
       for (const sessionId of this.activeSshSessions) {
         this.broadcast('ssh:close', sessionId)
@@ -289,21 +312,44 @@ class RustCoreService {
       this.sessionShellClosed.clear()
       this.knownSshSessions.clear()
       this.activeSshSessions.clear()
+      this.reconnecting.clear()
       this.readyVersion = null
+      if (this.healthyResetTimer) {
+        clearTimeout(this.healthyResetTimer)
+        this.healthyResetTimer = null
+      }
       this.rejectAllPending(new Error('Rust core process exited'))
 
-      if (!this.manuallyStopped && this.restartAttempts < 3) {
+      if (!this.manuallyStopped && this.restartAttempts < RUST_CORE_MAX_RESTART_ATTEMPTS) {
         this.restartAttempts += 1
+        const delay = Math.min(
+          RUST_CORE_RESTART_BASE_DELAY_MS * Math.pow(2, this.restartAttempts - 1),
+          RUST_CORE_RESTART_MAX_DELAY_MS
+        )
         setTimeout(() => {
-          this.start().catch((error) => {
-            console.error('[rust-core] restart failed', error)
-          })
-        }, 500)
+          this.start()
+            .then(() => {
+              for (const sessionId of sessionsToReconnect) {
+                this.maybeReconnect(sessionId)
+              }
+            })
+            .catch((error) => {
+              console.error('[rust-core] restart failed', error)
+            })
+        }, delay)
+      } else if (!this.manuallyStopped) {
+        console.error(`[rust-core] giving up after ${this.restartAttempts} restart attempts; SSH features need an app restart`)
       }
     })
 
     await this.waitForReady(readyTimeoutMs)
-    this.restartAttempts = 0
+    // Defer clearing the restart streak until the core proves it can stay up,
+    // preventing a rapid ready-then-crash loop from resetting the backoff.
+    if (this.healthyResetTimer) clearTimeout(this.healthyResetTimer)
+    this.healthyResetTimer = setTimeout(() => {
+      this.restartAttempts = 0
+      this.healthyResetTimer = null
+    }, RUST_CORE_STABLE_UPTIME_MS)
   }
 
   private async waitForReady(timeoutMs: number): Promise<void> {
@@ -327,6 +373,10 @@ class RustCoreService {
 
   async stop(): Promise<void> {
     this.manuallyStopped = true
+    if (this.healthyResetTimer) {
+      clearTimeout(this.healthyResetTimer)
+      this.healthyResetTimer = null
+    }
     this.rejectAllPending(new Error('Rust core stopped'))
     if (this.process && !this.process.killed) {
       this.process.kill()
@@ -335,6 +385,9 @@ class RustCoreService {
     this.sessionShellClosed.clear()
     this.knownSshSessions.clear()
     this.activeSshSessions.clear()
+    this.sessionConfigs.clear()
+    this.intentionalDisconnects.clear()
+    this.reconnecting.clear()
     this.readyVersion = null
     this.startupError = null
   }
@@ -556,6 +609,10 @@ class RustCoreService {
   }
 
   async connectSsh(config: RustSshConnectConfig): Promise<{ sessionId: string }> {
+    // Remember the config so we can transparently reconnect this session later.
+    this.sessionConfigs.set(config.sessionId, config)
+    this.intentionalDisconnects.delete(config.sessionId)
+
     const result = await this.request<{ sessionId: string }>('ssh.connect', {
       session_id: config.sessionId,
       host: config.host,
@@ -569,10 +626,14 @@ class RustCoreService {
     }, 15000)
     this.knownSshSessions.add(result.sessionId)
     this.activeSshSessions.add(result.sessionId)
+    this.sessionShellClosed.delete(result.sessionId)
     return result
   }
 
   async disconnectSsh(sessionId: string): Promise<void> {
+    // User-initiated disconnect: suppress any auto-reconnect for this session.
+    this.intentionalDisconnects.add(sessionId)
+    this.sessionConfigs.delete(sessionId)
     try {
       await this.request('ssh.disconnect', { session_id: sessionId }, 5000)
     } finally {
@@ -760,6 +821,7 @@ class RustCoreService {
 
       if ((message as { type?: string }).type === 'event' && !this.activeSshSessions.has(message.session_id)) {
         this.broadcast('ssh:close', message.session_id)
+        this.maybeReconnect(message.session_id)
         return
       }
     }
@@ -772,6 +834,7 @@ class RustCoreService {
       }
       this.broadcast('ssh:error', message.session_id, message.error)
       this.broadcast('ssh:close', message.session_id)
+      this.maybeReconnect((message as { session_id?: string }).session_id)
       return
     }
 
@@ -779,6 +842,7 @@ class RustCoreService {
       this.sessionShellClosed.add(message.session_id)
       this.activeSshSessions.delete(message.session_id)
       this.broadcast('ssh:close', message.session_id)
+      this.maybeReconnect(message.session_id)
     }
   }
 
@@ -786,6 +850,72 @@ class RustCoreService {
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(channel, ...args)
     }
+  }
+
+  /**
+   * Kick off transparent reconnection for a dropped session. The Rust core has
+   * no reconnect logic of its own, so we drive it here by re-issuing ssh.connect
+   * with the stored config. Mirrors the Node engine's UX via the same
+   * `ssh:reconnecting` / `ssh:reconnected` renderer events.
+   *
+   * No-ops for sessions we don't manage (e.g. docker-exec shells), sessions the
+   * user disconnected intentionally, or sessions already reconnecting.
+   */
+  private maybeReconnect(sessionId?: string): void {
+    if (!sessionId) return
+    if (!this.sessionConfigs.has(sessionId)) return
+    if (this.intentionalDisconnects.has(sessionId)) return
+    if (this.reconnecting.has(sessionId)) return
+    if (!getConnectionTuning().autoReconnect) return
+
+    this.reconnecting.add(sessionId)
+    void this.runReconnectLoop(sessionId)
+  }
+
+  private async runReconnectLoop(sessionId: string): Promise<void> {
+    try {
+      let attempt = 0
+      // Loop until reconnected, intentionally disconnected, or attempts exhausted.
+      // Re-read tuning each iteration so live settings changes take effect.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const tuning = getConnectionTuning()
+        attempt += 1
+
+        if (this.intentionalDisconnects.has(sessionId)) return
+        if (!shouldRetryReconnect(attempt, tuning)) {
+          this.broadcast('ssh:error', sessionId, '自动重连失败，已达最大重试次数')
+          this.broadcast('ssh:close', sessionId)
+          return
+        }
+
+        const config = this.sessionConfigs.get(sessionId)
+        if (!config) return
+
+        const delay = computeReconnectDelay(attempt, tuning)
+        this.broadcast('ssh:reconnecting', sessionId, attempt, delay)
+        await this.sleep(delay)
+
+        if (this.intentionalDisconnects.has(sessionId)) return
+        const latestConfig = this.sessionConfigs.get(sessionId)
+        if (!latestConfig) return
+
+        try {
+          await this.connectSsh(latestConfig)
+          this.broadcast('ssh:reconnected', sessionId)
+          return
+        } catch (error) {
+          console.warn(`[rust-core] reconnect attempt ${attempt} for ${sessionId} failed`, error)
+          // Fall through to the next backoff iteration.
+        }
+      }
+    } finally {
+      this.reconnecting.delete(sessionId)
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   private rejectAllPending(error: Error): void {

@@ -95,6 +95,29 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Prevent the renderer from navigating away from the SPA (security + stability).
+  // Same-origin / file: reloads are allowed; real web URLs open in the system browser.
+  const isInAppNavigation = (targetUrl: string): boolean => {
+    try {
+      const target = new URL(targetUrl)
+      if (target.protocol === 'file:') return true
+      const currentUrl = mainWindow?.webContents.getURL()
+      if (!currentUrl) return false
+      return target.origin === new URL(currentUrl).origin
+    } catch {
+      return false
+    }
+  }
+  const guardNavigation = (event: Electron.Event, url: string): void => {
+    if (isInAppNavigation(url)) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url)
+    }
+  }
+  mainWindow.webContents.on('will-navigate', guardNavigation)
+  mainWindow.webContents.on('will-redirect', guardNavigation)
+
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     const levelLabel = ['log', 'warn', 'error', 'debug', 'info'][level] || `level-${level}`
     console[levelLabel === 'error' ? 'error' : levelLabel === 'warn' ? 'warn' : 'log'](

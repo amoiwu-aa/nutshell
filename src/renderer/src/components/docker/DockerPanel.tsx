@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Container, Image, Play, Square, RefreshCw, Trash2, Terminal, FileText,
   Download, Upload, RotateCcw, Search, FolderOpen, ArrowUp, Home, ChevronRight,
-  X, AlertCircle, Copy, Check, Plus, Network, Info, Settings, Layers, Save
+  X, AlertCircle, Copy, Check, Plus, Network, Info, Settings, Layers, Save, Radio
 } from 'lucide-react'
 import { cn, formatBytes } from '../../lib/utils'
 import { useConnectionStore } from '../../stores/connectionStore'
@@ -14,13 +14,36 @@ interface ComposeProject { name: string; status: string; configFiles: string }
 
 interface DockerPanelProps { sessionId: string; tabId: string }
 
+// --- Per-session cache (stale-while-revalidate) ---
+// Survives panel remounts/tab switches so reopening Docker shows data instantly
+// while a fresh copy loads silently in the background.
+interface DockerCacheEntry {
+  containers: ContainerInfo[]
+  images: ImageInfo[]
+  networks: NetworkInfo[]
+  composeProjects: ComposeProject[]
+  warmed: boolean
+}
+const dockerCacheStore = new Map<string, DockerCacheEntry>()
+function getDockerCache(sessionId: string): DockerCacheEntry {
+  let entry = dockerCacheStore.get(sessionId)
+  if (!entry) {
+    entry = { containers: [], images: [], networks: [], composeProjects: [], warmed: false }
+    dockerCacheStore.set(sessionId, entry)
+  }
+  return entry
+}
+
 export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   const [activeView, setActiveView] = useState<'containers' | 'images' | 'networks' | 'compose'>('containers')
-  const [containers, setContainers] = useState<ContainerInfo[]>([])
-  const [images, setImages] = useState<ImageInfo[]>([])
-  const [networks, setNetworks] = useState<NetworkInfo[]>([])
-  const [composeProjects, setComposeProjects] = useState<ComposeProject[]>([])
+  const [containers, setContainers] = useState<ContainerInfo[]>(() => getDockerCache(sessionId).containers)
+  const [images, setImages] = useState<ImageInfo[]>(() => getDockerCache(sessionId).images)
+  const [networks, setNetworks] = useState<NetworkInfo[]>(() => getDockerCache(sessionId).networks)
+  const [composeProjects, setComposeProjects] = useState<ComposeProject[]>(() => getDockerCache(sessionId).composeProjects)
+  // `loading` blocks the view (spinner) only when there is no cached data yet;
+  // `refreshing` indicates a silent background revalidation.
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [actionLoadingMap, setActionLoadingMap] = useState<Record<string, string>>({})
@@ -51,34 +74,76 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   const [pulling, setPulling] = useState(false)
   // Top count for file browser
   const [topCount] = useState(10)
+  // Auto-refresh
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Show a blocking spinner only on a cold load; otherwise revalidate silently.
+  const beginLoad = useCallback((hasData: boolean) => {
+    if (hasData) setRefreshing(true)
+    else setLoading(true)
+    setError(null)
+  }, [])
+  const endLoad = useCallback(() => { setLoading(false); setRefreshing(false) }, [])
 
   const loadContainers = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { const r = await window.api.docker.listContainers(sessionId); if (r.success) setContainers(r.containers); else setError(r.error) }
-    catch (e: any) { setError(e.message) }
-    setLoading(false)
-  }, [sessionId])
+    const cache = getDockerCache(sessionId)
+    beginLoad(cache.containers.length > 0)
+    try {
+      const r = await window.api.docker.listContainers(sessionId)
+      if (r.success) { setContainers(r.containers); cache.containers = r.containers }
+      else setError(r.error)
+    } catch (e: any) { setError(e.message) }
+    endLoad()
+  }, [sessionId, beginLoad, endLoad])
 
   const loadImages = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { const r = await window.api.docker.listImages(sessionId); if (r.success) setImages(r.images); else setError(r.error) }
-    catch (e: any) { setError(e.message) }
-    setLoading(false)
-  }, [sessionId])
+    const cache = getDockerCache(sessionId)
+    beginLoad(cache.images.length > 0)
+    try {
+      const r = await window.api.docker.listImages(sessionId)
+      if (r.success) { setImages(r.images); cache.images = r.images }
+      else setError(r.error)
+    } catch (e: any) { setError(e.message) }
+    endLoad()
+  }, [sessionId, beginLoad, endLoad])
 
   const loadNetworks = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { const r = await window.api.docker.listNetworks(sessionId); if (r.success) setNetworks(r.networks); else setError(r.error) }
-    catch (e: any) { setError(e.message) }
-    setLoading(false)
-  }, [sessionId])
+    const cache = getDockerCache(sessionId)
+    beginLoad(cache.networks.length > 0)
+    try {
+      const r = await window.api.docker.listNetworks(sessionId)
+      if (r.success) { setNetworks(r.networks); cache.networks = r.networks }
+      else setError(r.error)
+    } catch (e: any) { setError(e.message) }
+    endLoad()
+  }, [sessionId, beginLoad, endLoad])
 
   const loadCompose = useCallback(async () => {
-    setLoading(true); setError(null)
-    try { const r = await window.api.docker.listComposeProjects(sessionId); if (r.success) setComposeProjects(r.projects); else setError(r.error) }
-    catch (e: any) { setError(e.message) }
-    setLoading(false)
-  }, [sessionId])
+    const cache = getDockerCache(sessionId)
+    beginLoad(cache.composeProjects.length > 0)
+    try {
+      const r = await window.api.docker.listComposeProjects(sessionId)
+      if (r.success) { setComposeProjects(r.projects); cache.composeProjects = r.projects }
+      else setError(r.error)
+    } catch (e: any) { setError(e.message) }
+    endLoad()
+  }, [sessionId, beginLoad, endLoad])
+
+  // Warm containers + images + networks in a single round-trip (first open).
+  const loadOverview = useCallback(async () => {
+    const cache = getDockerCache(sessionId)
+    beginLoad(cache.containers.length > 0 || cache.images.length > 0 || cache.networks.length > 0)
+    try {
+      const r = await window.api.docker.overview(sessionId)
+      if (r.success) {
+        setContainers(r.containers); cache.containers = r.containers
+        setImages(r.images); cache.images = r.images
+        setNetworks(r.networks); cache.networks = r.networks
+      } else setError(r.error)
+    } catch (e: any) { setError(e.message) }
+    endLoad()
+  }, [sessionId, beginLoad, endLoad])
 
   const openComposeEditor = async (projectName: string, filePath: string) => {
     setComposeEditor({ filePath, projectName, content: '', loading: true, saving: false })
@@ -93,13 +158,44 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
   }
 
   useEffect(() => {
+    const cache = getDockerCache(sessionId)
+    // First open for this session: one batched round-trip warms
+    // containers/images/networks together instead of three serial fetches.
+    if (!cache.warmed && activeView !== 'compose') {
+      cache.warmed = true
+      loadOverview()
+      return
+    }
     if (activeView === 'containers') loadContainers()
     else if (activeView === 'images') loadImages()
     else if (activeView === 'networks') loadNetworks()
     else if (activeView === 'compose') loadCompose()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView])
 
+  useEffect(() => {
+    if (autoRefresh && activeView === 'containers') {
+      autoRefreshRef.current = setInterval(() => {
+        window.api.docker.listContainers(sessionId).then((r) => {
+          if (r.success) { setContainers(r.containers); getDockerCache(sessionId).containers = r.containers }
+        })
+      }, 5000)
+    }
+    return () => {
+      if (autoRefreshRef.current) { clearInterval(autoRefreshRef.current); autoRefreshRef.current = null }
+    }
+  }, [autoRefresh, activeView, sessionId])
+
   const handleContainerAction = async (containerId: string, action: string) => {
+    // Guard the only irreversible container action against mis-clicks. Other
+    // actions (start/stop/restart) are reversible and stay one-click.
+    if (action === 'remove') {
+      const target = containers.find((c) => c.id === containerId)
+      const label = target?.name || containerId.substring(0, 12)
+      if (!confirm(`确定删除容器 "${label}"？\n此操作不可恢复（docker rm -f）。\n若该容器由 compose / systemd / 编排器管理，可能会被自动重建。`)) {
+        return
+      }
+    }
     setActionLoadingMap((p) => ({ ...p, [`container-${containerId}`]: action }))
     try { await window.api.docker.containerAction(sessionId, containerId, action) }
     finally {
@@ -108,7 +204,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
     }
   }
   const handleViewLogs = async (containerId: string, name: string) => {
-    setLogViewer({ containerId, name, logs: '', loading: true, tail: 500, since: '', until: '', searchText: '', matchCount: 0, matchIndex: 0 })
+    setLogViewer({ containerId, name, logs: '', loading: true, tail: 500, since: '', until: '', searchText: '', matchCount: 0, matchIndex: 0, live: false })
     const r = await window.api.docker.containerLogs(sessionId, containerId, { tail: 500 })
     setLogViewer((p: any) => p ? { ...p, logs: r.success ? r.logs : `Error: ${r.error}`, loading: false } : null)
   }
@@ -248,8 +344,9 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
           {activeView === 'containers' && <button onClick={() => setShowCreateContainer(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 btn-glow"><Plus className="w-3.5 h-3.5" />创建容器</button>}
           {activeView === 'images' && <button onClick={() => setShowRegistryMirrors(true)} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent" title="镜像源设置"><Settings className="w-4 h-4" /></button>}
           {activeView === 'networks' && <button onClick={() => setShowCreateNetwork(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 btn-glow"><Plus className="w-3.5 h-3.5" />创建网络</button>}
+          {activeView === 'containers' && <button onClick={() => setAutoRefresh(!autoRefresh)} className={cn('p-1.5 border rounded-lg', autoRefresh ? 'bg-green-500/20 border-green-500/50 text-green-500' : 'bg-card border-border hover:bg-accent')} title={autoRefresh ? '关闭自动刷新' : '自动刷新 (5s)'}><Radio className="w-4 h-4" /></button>}
           <button onClick={() => { if (activeView === 'containers') loadContainers(); else if (activeView === 'images') loadImages(); else if (activeView === 'networks') loadNetworks(); else loadCompose() }} className="p-1.5 bg-card border border-border rounded-lg hover:bg-accent">
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
+            <RefreshCw className={cn('w-4 h-4', (loading || refreshing) && 'animate-spin')} />
           </button>
         </div>
       </div>
@@ -422,7 +519,7 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
       {/* ===== MODALS ===== */}
 
       {/* Log Viewer — virtualized */}
-      {logViewer && <VirtualLogViewer logViewer={logViewer} setLogViewer={setLogViewer} logPreRef={logPreRef} refreshLogs={refreshLogs} />}
+      {logViewer && <VirtualLogViewer logViewer={logViewer} setLogViewer={setLogViewer} logPreRef={logPreRef} refreshLogs={refreshLogs} sessionId={sessionId} />}
 
       {/* Container Detail */}
       {containerDetail && <ContainerDetailModal
@@ -487,15 +584,67 @@ export function DockerPanel({ sessionId, tabId }: DockerPanelProps) {
 // ===== Virtualized Log Viewer =====
 const LINE_HEIGHT = 16 // px per line (text-xs + mono)
 const OVERSCAN = 30 // extra lines above/below viewport for smooth scrolling
+const LOG_WRAP_STORAGE_KEY = 'nutshell.docker.logWrap'
 
-function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
-  logViewer: any; setLogViewer: (fn: any) => void; logPreRef: React.RefObject<HTMLPreElement | null>; refreshLogs: () => void
+function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs, sessionId }: {
+  logViewer: any; setLogViewer: (fn: any) => void; logPreRef: React.RefObject<HTMLPreElement | null>; refreshLogs: () => void; sessionId: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewHeight, setViewHeight] = useState(600)
   const [copied, setCopied] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  // Wrap mode (default) renders in natural flow so scroll-to-bottom is always
+  // correct; no-wrap mode uses fixed-height virtualization for very large logs.
+  // Preference persists across sessions via localStorage.
+  const [wrap, setWrap] = useState<boolean>(() => {
+    try { return localStorage.getItem(LOG_WRAP_STORAGE_KEY) !== 'false' } catch { return true }
+  })
+  useEffect(() => {
+    try { localStorage.setItem(LOG_WRAP_STORAGE_KEY, String(wrap)) } catch { /* ignore */ }
+  }, [wrap])
+  const liveBufferRef = useRef('')
+
+  // Live streaming toggle
+  const toggleLive = useCallback(() => {
+    if (logViewer.live) {
+      window.api.docker.stopLogStream(logViewer.containerId)
+      setLogViewer((p: any) => p ? { ...p, live: false } : null)
+    } else {
+      window.api.docker.startLogStream(sessionId, logViewer.containerId)
+      setLogViewer((p: any) => p ? { ...p, live: true } : null)
+    }
+  }, [logViewer.live, logViewer.containerId, sessionId, setLogViewer])
+
+  // Subscribe to streaming logs
+  useEffect(() => {
+    if (!logViewer.live) return
+    let rafId: number | null = null
+    const cleanup = window.api.docker.onLogs((containerId: string, chunk: string) => {
+      if (containerId !== logViewer.containerId) return
+      liveBufferRef.current += chunk
+      if (!rafId) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null
+          const buffered = liveBufferRef.current
+          liveBufferRef.current = ''
+          setLogViewer((p: any) => p ? { ...p, logs: p.logs + buffered } : null)
+        })
+      }
+    })
+    return () => {
+      cleanup()
+      if (rafId) cancelAnimationFrame(rafId)
+      window.api.docker.stopLogStream(logViewer.containerId)
+    }
+  }, [logViewer.live, logViewer.containerId, setLogViewer])
+
+  // Stop streaming on close
+  useEffect(() => {
+    return () => {
+      if (logViewer.live) window.api.docker.stopLogStream(logViewer.containerId)
+    }
+  }, [])
 
   // Parse lines once
   const allLines = useMemo(() => logViewer.logs ? logViewer.logs.split('\n') : [], [logViewer.logs])
@@ -517,12 +666,17 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
   const endIdx = Math.min(lineCount, Math.ceil((scrollTop + viewHeight) / LINE_HEIGHT) + OVERSCAN)
   const visibleSlice = displayLines.slice(startIdx, endIdx)
 
-  // On mount + log change, auto-scroll to bottom
+  // On mount + log change, auto-scroll to bottom. Use rAF so the scroll lands
+  // after layout (heights are only final post-paint, esp. in wrap mode).
   useEffect(() => {
-    if (!logViewer.loading && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [logViewer.logs, logViewer.loading])
+    if (logViewer.loading) return
+    const el = scrollRef.current
+    if (!el) return
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [logViewer.logs, logViewer.loading, wrap])
 
   // Track viewport size
   useEffect(() => {
@@ -641,21 +795,33 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
             <option value={100}>100行</option><option value={500}>500行</option><option value={1000}>1000行</option><option value={5000}>5000行</option><option value={10000}>10000行</option><option value="all">全部</option>
           </select>
           <button onClick={refreshLogs} disabled={logViewer.loading} className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs"><RefreshCw className={cn('w-3 h-3 inline', logViewer.loading && 'animate-spin')} /> 刷新</button>
+          <button onClick={toggleLive} className={cn('flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors', logViewer.live ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-secondary hover:bg-secondary/80')}>
+            <Radio className={cn('w-3 h-3', logViewer.live && 'animate-pulse')} />{logViewer.live ? '实时中' : '实时'}
+          </button>
+          <button
+            onClick={() => setWrap((w) => !w)}
+            className={cn('px-2 py-1 rounded text-xs transition-colors', wrap ? 'bg-secondary hover:bg-secondary/80' : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60')}
+            title={wrap ? '自动换行（默认）。点击切换为不换行，超大日志更流畅' : '不换行（虚拟滚动）。点击切换为自动换行'}
+          >
+            {wrap ? '换行' : '不换行'}
+          </button>
           <div className="h-4 border-r border-border/50 mx-0.5" />
-          {['ERROR', 'WARN', 'Exception', 'Fatal', 'Timeout', 'refused', 'denied', 'OOM', 'panic'].map((kw) => (
-            <button
-              key={kw}
-              onClick={() => setLogViewer((p: any) => p ? { ...p, searchText: p.searchText === kw ? '' : kw } : null)}
-              className={cn(
-                'px-1.5 py-0.5 rounded text-[11px] border transition-colors',
-                logViewer.searchText === kw
-                  ? 'bg-red-500/20 border-red-500/50 text-red-400'
-                  : 'bg-secondary/50 border-transparent text-muted-foreground hover:bg-secondary hover:text-foreground'
-              )}
-            >
-              {kw}
-            </button>
-          ))}
+          <select
+            value={logViewer.searchText && ['ERROR', 'WARN', 'Exception', 'Fatal', 'Timeout', 'refused', 'denied', 'OOM', 'panic'].includes(logViewer.searchText) ? logViewer.searchText : ''}
+            onChange={(e) => setLogViewer((p: any) => p ? { ...p, searchText: e.target.value } : null)}
+            className="px-2 py-1 bg-background border border-input rounded text-xs outline-none"
+          >
+            <option value="">快捷过滤</option>
+            <option value="ERROR">ERROR</option>
+            <option value="WARN">WARN</option>
+            <option value="Exception">Exception</option>
+            <option value="Fatal">Fatal</option>
+            <option value="Timeout">Timeout</option>
+            <option value="refused">refused</option>
+            <option value="denied">denied</option>
+            <option value="OOM">OOM</option>
+            <option value="panic">panic</option>
+          </select>
         </div>
         <div className="flex items-center gap-2 px-5 py-1.5 border-b border-border shrink-0">
           <Search className="w-3.5 h-3.5 text-muted-foreground" />
@@ -678,11 +844,24 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
         >
           {logViewer.loading ? (
             <div className="p-4 text-xs font-mono text-[#c9d1d9]">Loading...</div>
+          ) : wrap ? (
+            // Wrap mode: natural document flow (no virtual positioning), so real
+            // line heights are used and scroll-to-bottom is always accurate.
+            <pre
+              className="text-xs font-mono text-[#c9d1d9] whitespace-pre-wrap break-words px-4"
+              style={{ lineHeight: `${LINE_HEIGHT}px`, margin: 0 }}
+            >
+              {logViewer.searchText
+                ? displayLines.map((l: { text: string; idx: number }) => renderLine(l))
+                : logViewer.logs}
+            </pre>
           ) : (
+            // No-wrap mode: fixed-height virtualization is exact because every
+            // logical line occupies exactly one row.
             <div style={{ height: totalHeight, position: 'relative' }}>
               <pre
-                className="text-xs font-mono text-[#c9d1d9] whitespace-pre-wrap px-4 absolute left-0 right-0"
-                style={{ top: startIdx * LINE_HEIGHT, lineHeight: `${LINE_HEIGHT}px` }}
+                className="text-xs font-mono text-[#c9d1d9] whitespace-pre px-4 absolute left-0 right-0"
+                style={{ top: startIdx * LINE_HEIGHT, lineHeight: `${LINE_HEIGHT}px`, margin: 0 }}
               >
                 {logViewer.searchText
                   ? visibleSlice.map((l: { text: string; idx: number }) => renderLine(l))
@@ -695,7 +874,7 @@ function VirtualLogViewer({ logViewer, setLogViewer, logPreRef, refreshLogs }: {
 
         <div className="px-5 py-1.5 border-t border-border text-[10px] text-muted-foreground shrink-0 flex justify-between">
           <span>共 {totalLineCount.toLocaleString()} 行{logViewer.searchText ? ` | 匹配 ${displayLines.length.toLocaleString()} 行` : ''} | {formatBytes(logViewer.logs.length)}</span>
-          {totalLineCount > 10000 && <span className="text-green-500">✓ 虚拟滚动已启用</span>}
+          {!wrap && totalLineCount > 10000 && <span className="text-green-500">✓ 虚拟滚动已启用</span>}
         </div>
       </div>
 
@@ -856,7 +1035,7 @@ function RegistryMirrorsDialog({ sessionId, onClose }: { sessionId: string; onCl
     setSaving(true)
     await window.api.docker.setRegistryMirrors(sessionId, mirrors)
     setSaving(false)
-    alert('镜像源已保存。请在终端执行 sudo systemctl restart docker 使配置生效。')
+    alert('镜像源已保存（原 daemon.json 已备份为 daemon.json.nutshell.bak）。\n\n⚠ 需在终端执行 sudo systemctl restart docker 才能生效；重启会瞬断该机器上所有容器，请择机操作。')
   }
 
   const addMirror = (url: string) => {

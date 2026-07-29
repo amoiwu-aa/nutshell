@@ -96,5 +96,3 @@ export function EditorTabs({ sessionId, openFiles, activeFile, onActivate, onClo
     </div>
   )
 }
-
-export type { OpenFile }

@@ -5,6 +5,14 @@ import { v4 as uuidv4 } from 'uuid'
 import { sftpManager } from './SFTPManager'
 import { portForwardManager } from './PortForward'
 import { serverMonitor } from '../monitor/ServerMonitor'
+import {
+  getConnectionTuning,
+  computeReconnectDelay,
+  shouldRetryReconnect,
+  PREFERRED_CIPHERS,
+  SSH_HIGH_WATER_MARK,
+  DEFAULT_CONNECTION_TUNING
+} from './connectionTuning'
 
 const DEFAULT_SSH_TERM = 'xterm-256color'
 
@@ -58,12 +66,50 @@ export interface SSHSession {
   autoReconnect: boolean
 }
 
-const EXEC_TIMEOUT_MS = 30000
-const MAX_RECONNECT_DELAY_MS = 30000
+const EXEC_TIMEOUT_MS = DEFAULT_CONNECTION_TUNING.execTimeoutMs
 
 class SSHManager {
   private sessions: Map<string, SSHSession> = new Map()
   private connectingLocks: Map<string, Promise<string>> = new Map()
+
+  /**
+   * Build ssh2 connect options from a session config and the centralized tuning.
+   * Shared by initial connect and reconnect so both paths stay in lockstep.
+   */
+  private buildConnectOptions(
+    config: {
+      host: string
+      port: number
+      username: string
+      authType: string
+      password?: string
+      passphrase?: string
+    },
+    privateKeyData?: Buffer
+  ): Record<string, unknown> {
+    const tuning = getConnectionTuning()
+    const options: Record<string, unknown> = {
+      host: config.host,
+      port: config.port,
+      username: config.username,
+      keepaliveInterval: tuning.keepaliveIntervalMs,
+      keepaliveCountMax: tuning.keepaliveCountMax,
+      readyTimeout: tuning.readyTimeoutMs,
+      highWaterMark: SSH_HIGH_WATER_MARK,
+      algorithms: { cipher: [...PREFERRED_CIPHERS] }
+    }
+
+    if (config.authType === 'password') {
+      options.password = config.password
+    } else {
+      options.privateKey = privateKeyData
+      if (config.passphrase) {
+        options.passphrase = config.passphrase
+      }
+    }
+
+    return options
+  }
 
   private getTerminalEnvironment(aiCompatibilityMode: boolean): NodeJS.ProcessEnv | undefined {
     if (!aiCompatibilityMode) {
@@ -109,43 +155,27 @@ class SSHManager {
       await this.disconnect(sessionId)
     }
 
+    let privateKeyData: Buffer | undefined
+    if (config.authType === 'key' || config.authType === 'keyWithPassphrase') {
+      const fs = require('fs')
+      privateKeyData = await fs.promises.readFile(config.privateKeyPath!)
+    }
+
     const client = new Client()
 
     return new Promise((resolve, reject) => {
-      const connectOptions: any = {
-        host: config.host,
-        port: config.port,
-        username: config.username,
-        keepaliveInterval: 10000,
-        keepaliveCountMax: 3,
-        readyTimeout: 30000,
-        // Performance: increase SSH channel buffer for high-throughput transfers
-        highWaterMark: 1024 * 1024, // 1MB (default 32KB is too small for gigabit)
-        // Prefer AES-GCM ciphers that benefit from hardware AES-NI acceleration
-        algorithms: {
-          cipher: [
-            'aes128-gcm', 'aes128-gcm@openssh.com',
-            'aes256-gcm', 'aes256-gcm@openssh.com',
-            'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-            'chacha20-poly1305@openssh.com'
-          ]
-        }
-      }
-
-      if (config.authType === 'password') {
-        connectOptions.password = config.password
-      } else if (config.authType === 'key' || config.authType === 'keyWithPassphrase') {
-        const fs = require('fs')
-        try {
-          connectOptions.privateKey = fs.readFileSync(config.privateKeyPath!)
-          if (config.passphrase) {
-            connectOptions.passphrase = config.passphrase
-          }
-        } catch (err) {
-          reject(new Error(`Failed to read private key: ${err}`))
-          return
-        }
-      }
+      const tuning = getConnectionTuning()
+      const connectOptions = this.buildConnectOptions(
+        {
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          authType: config.authType,
+          password: config.password,
+          passphrase: config.passphrase
+        },
+        privateKeyData
+      )
 
       const onReady = (): void => {
         if (settled) return
@@ -166,8 +196,8 @@ class SSHManager {
           },
           connected: true,
           reconnectAttempts: 0,
-          maxReconnectAttempts: config.maxReconnectAttempts ?? 5,
-          autoReconnect: config.autoReconnect ?? true
+          maxReconnectAttempts: config.maxReconnectAttempts ?? tuning.maxReconnectAttempts,
+          autoReconnect: config.autoReconnect ?? tuning.autoReconnect
         }
         this.sessions.set(sessionId, session)
 
@@ -217,8 +247,9 @@ class SSHManager {
     // Clean up dependent resources
     this.cleanupDependents(sessionId)
 
-    // Auto reconnect if enabled
-    if (session.autoReconnect && session.reconnectAttempts < session.maxReconnectAttempts) {
+    // Auto reconnect if enabled (next attempt is reconnectAttempts + 1)
+    const tuning = getConnectionTuning()
+    if (session.autoReconnect && shouldRetryReconnect(session.reconnectAttempts + 1, tuning)) {
       this.attemptReconnect(sessionId)
     }
   }
@@ -241,8 +272,9 @@ class SSHManager {
     const session = this.sessions.get(sessionId)
     if (!session || session.connected) return
 
+    const tuning = getConnectionTuning()
     session.reconnectAttempts++
-    const delay = Math.min(1000 * Math.pow(2, session.reconnectAttempts - 1), MAX_RECONNECT_DELAY_MS)
+    const delay = computeReconnectDelay(session.reconnectAttempts, tuning)
 
     this.notifyReconnecting(sessionId, session.reconnectAttempts, delay)
 
@@ -254,39 +286,15 @@ class SSHManager {
 
     try {
       const newClient = new Client()
-      await new Promise<void>((resolve, reject) => {
-        const connectOptions: any = {
-          host: currentSession.config.host,
-          port: currentSession.config.port,
-          username: currentSession.config.username,
-          keepaliveInterval: 10000,
-          keepaliveCountMax: 3,
-          readyTimeout: 30000,
-          highWaterMark: 1024 * 1024,
-          algorithms: {
-            cipher: [
-              'aes128-gcm', 'aes128-gcm@openssh.com',
-              'aes256-gcm', 'aes256-gcm@openssh.com',
-              'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-              'chacha20-poly1305@openssh.com'
-            ]
-          }
-        }
 
-        if (currentSession.config.authType === 'password') {
-          connectOptions.password = currentSession.config.password
-        } else {
-          const fs = require('fs')
-          try {
-            connectOptions.privateKey = fs.readFileSync(currentSession.config.privateKeyPath!)
-            if (currentSession.config.passphrase) {
-              connectOptions.passphrase = currentSession.config.passphrase
-            }
-          } catch {
-            reject(new Error('Key read failed'))
-            return
-          }
-        }
+      let reconnectKeyData: Buffer | undefined
+      if (currentSession.config.authType !== 'password' && currentSession.config.privateKeyPath) {
+        const fs = require('fs')
+        reconnectKeyData = await fs.promises.readFile(currentSession.config.privateKeyPath)
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const connectOptions = this.buildConnectOptions(currentSession.config, reconnectKeyData)
 
         newClient.once('ready', () => {
           // Replace old client
@@ -310,8 +318,8 @@ class SSHManager {
         newClient.connect(connectOptions)
       })
     } catch {
-      // Retry again if under limit
-      if (session.reconnectAttempts < session.maxReconnectAttempts) {
+      // Retry again if still permitted by the tuning policy
+      if (shouldRetryReconnect(session.reconnectAttempts + 1, tuning)) {
         this.attemptReconnect(sessionId)
       } else {
         this.notifyError(sessionId, '自动重连失败，已达最大重试次数')
@@ -572,45 +580,73 @@ class SSHManager {
     if (!session.connected) throw new Error('Session not connected')
 
     return new Promise((resolve, reject) => {
+      let settled = false
+      let activeStream: ClientChannel | null = null
+
+      // Always release the channel + listeners exactly once. Without this, a
+      // timed-out command would leak its SSH channel, eventually exhausting the
+      // server's MaxSessions limit and breaking every subsequent exec.
+      const cleanupStream = (): void => {
+        const stream = activeStream
+        if (!stream) return
+        activeStream = null
+        try { stream.removeAllListeners() } catch { /* ignore */ }
+        try { stream.stderr?.removeAllListeners() } catch { /* ignore */ }
+        try { stream.close() } catch { /* ignore */ }
+        try { stream.destroy() } catch { /* ignore */ }
+      }
+
+      const finish = (err: Error | null, value?: string): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        cleanupStream()
+        if (err) reject(err)
+        else resolve(value ?? '')
+      }
+
       const timer = setTimeout(() => {
-        reject(new Error(`Command timed out after ${timeoutMs}ms`))
+        finish(new Error(`Command timed out after ${timeoutMs}ms`))
       }, timeoutMs)
 
-      const callback = (err: Error | undefined, stream: ClientChannel) => {
+      const callback = (err: Error | undefined, stream: ClientChannel): void => {
         if (err) {
-          clearTimeout(timer)
-          reject(err)
+          finish(err)
+          return
+        }
+        if (settled) {
+          // Timed out before the channel opened — close it immediately.
+          try { stream.close() } catch { /* ignore */ }
+          try { stream.destroy() } catch { /* ignore */ }
           return
         }
 
+        activeStream = stream
         let output = ''
         let errorOutput = ''
 
         stream.on('data', (data: Buffer) => {
           output += data.toString()
         })
-
         stream.stderr.on('data', (data: Buffer) => {
           errorOutput += data.toString()
         })
-
         stream.on('close', () => {
-          clearTimeout(timer)
-          stream.removeAllListeners()
-          resolve(output || errorOutput)
+          finish(null, output || errorOutput)
         })
-
         stream.on('error', (streamErr: Error) => {
-          clearTimeout(timer)
-          stream.removeAllListeners()
-          reject(streamErr)
+          finish(streamErr)
         })
       }
 
-      if (execOptions) {
-        session.client.exec(command, execOptions, callback)
-      } else {
-        session.client.exec(command, callback)
+      try {
+        if (execOptions) {
+          session.client.exec(command, execOptions, callback)
+        } else {
+          session.client.exec(command, callback)
+        }
+      } catch (syncErr: any) {
+        finish(syncErr instanceof Error ? syncErr : new Error(String(syncErr)))
       }
     })
   }

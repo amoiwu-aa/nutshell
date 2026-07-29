@@ -200,6 +200,7 @@ const api = {
     listContainers: (sessionId: string) =>
       ipcRenderer.invoke('docker:listContainers', sessionId),
     listImages: (sessionId: string) => ipcRenderer.invoke('docker:listImages', sessionId),
+    overview: (sessionId: string) => ipcRenderer.invoke('docker:overview', sessionId),
     containerAction: (sessionId: string, containerId: string, action: string) =>
       ipcRenderer.invoke('docker:containerAction', sessionId, containerId, action),
     containerLogs: (
@@ -315,8 +316,6 @@ const api = {
       ipcRenderer.invoke('ai:codeRefactor', code, language, instruction),
     codeFix: (code: string, language: string, error: string) =>
       ipcRenderer.invoke('ai:codeFix', code, language, error),
-    generateScript: (type: string, description: string) =>
-      ipcRenderer.invoke('ai:generateScript', type, description),
     agentChat: (messages: any[], sessionId: string, rootPath: string, maxIterations?: number) =>
       ipcRenderer.invoke('ai:agentChat', messages, sessionId, rootPath, maxIterations),
     onToolCall: (callback: (name: string, args: any) => void) => {

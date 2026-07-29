@@ -123,21 +123,6 @@ class AIService {
     )
   }
 
-  async generateScript(type: string, description: string): Promise<string> {
-    const typeMap: Record<string, string> = {
-      shell: 'Shell 脚本 (bash)',
-      dockerfile: 'Dockerfile',
-      compose: 'docker-compose.yml',
-      nginx: 'Nginx 配置文件',
-      systemd: 'systemd service 文件',
-      crontab: 'crontab 规则'
-    }
-    const typeName = typeMap[type] || type
-    return this.chatWithPrompt(
-      `你是一个 Linux 运维专家。根据用户需求生成完整的 ${typeName}。只返回文件内容（用\`\`\`代码块包裹），加必要的注释说明。确保生成的内容可以直接使用。`,
-      [{ role: 'user', content: `请生成一个 ${typeName}，需求如下:\n\n${description}` }]
-    )
-  }
 
   // ===== Agent Chat (with tool execution loop) =====
   async agentChat(

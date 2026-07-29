@@ -14,6 +14,9 @@ const TAR_DOWNLOAD_THRESHOLD = 30 // Use tar-based download when dir has more th
 const SFTP_CHUNK_SIZE = 256 * 1024 // 256KB per chunk (ssh2 default 64KB is too small for gigabit)
 const SFTP_CONCURRENCY = 32 // Number of concurrent in-flight requests
 const SFTP_STREAM_HWM = 512 * 1024 // Stream highWaterMark for fallback stream transfers
+// Trust a recently-validated SFTP session without re-running stat('.') — avoids
+// an extra round-trip on bursts of small single-file transfers.
+const SFTP_VALIDATION_TTL_MS = 3000
 
 export interface RemoteFileInfo {
   filename: string
@@ -49,6 +52,7 @@ class SFTPManager {
   private sftpLocks: Map<string, Promise<SFTPWrapper>> = new Map()
   private activeTransfers: Map<string, { abort: () => void }> = new Map()
   private skipFileSets: Map<string, Set<number>> = new Map()
+  private sftpValidatedAt: Map<string, number> = new Map()
 
   private async getSFTP(sessionId: string): Promise<SFTPWrapper> {
     const existing = this.sftpSessions.get(sessionId)
@@ -80,6 +84,7 @@ class SFTPManager {
           return
         }
         this.sftpSessions.set(sessionId, sftpSession)
+        this.sftpValidatedAt.set(sessionId, Date.now())
         resolve(sftpSession)
       })
     })
@@ -104,6 +109,11 @@ class SFTPManager {
     // Test if existing session is still alive
     const existing = this.sftpSessions.get(sessionId)
     if (existing) {
+      // Skip the liveness probe if we validated/created it very recently.
+      const validatedAt = this.sftpValidatedAt.get(sessionId) || 0
+      if (Date.now() - validatedAt < SFTP_VALIDATION_TTL_MS) {
+        return existing
+      }
       try {
         await new Promise<void>((resolve, reject) => {
           existing.stat('.', (err) => {
@@ -111,11 +121,13 @@ class SFTPManager {
             else resolve()
           })
         })
+        this.sftpValidatedAt.set(sessionId, Date.now())
         return existing
       } catch {
         // Stale session, remove and recreate
         console.log(`[SFTP] Stale session detected for ${sessionId}, recreating...`)
         this.sftpSessions.delete(sessionId)
+        this.sftpValidatedAt.delete(sessionId)
       }
     }
     return this.getSFTP(sessionId)
@@ -1243,6 +1255,7 @@ class SFTPManager {
       this.sftpSessions.delete(sessionId)
     }
     this.sftpLocks.delete(sessionId)
+    this.sftpValidatedAt.delete(sessionId)
   }
 
   private modeToPermissions(mode: number): string {

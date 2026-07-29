@@ -117,7 +117,12 @@ class ServerMonitor {
   private startingSessions: Set<string> = new Set()
   private inFlightSessions: Set<string> = new Set()
   private consecutiveFailures: Map<string, number> = new Map()
-  private readonly maxConsecutiveFailures = 3
+  private readonly maxConsecutiveFailures = 5
+  // While a session is briefly down (e.g. auto-reconnecting) we pause sampling
+  // instead of stopping, so monitoring resumes automatically once the link is
+  // restored. Only give up after this many consecutive missed ticks.
+  private disconnectedTicks: Map<string, number> = new Map()
+  private readonly maxDisconnectedTicks = 100
 
   // Slow-poll cache: expensive commands (df, ps aux, nvidia-smi) run every Nth tick
   private slowCache: Map<string, SlowCache> = new Map()
@@ -203,6 +208,7 @@ class ServerMonitor {
     this.startingSessions.delete(sessionId)
     this.inFlightSessions.delete(sessionId)
     this.consecutiveFailures.delete(sessionId)
+    this.disconnectedTicks.delete(sessionId)
     this.prevNetworkStats.delete(sessionId)
     this.prevCpuStats.delete(sessionId)
     this.enabledModules.delete(sessionId)
@@ -235,9 +241,17 @@ class ServerMonitor {
 
   private async collectAndSend(sessionId: string): Promise<void> {
     if (!sshManager.isConnected(sessionId) && !rustCoreService.hasSshSession(sessionId)) {
-      this.stop(sessionId, true)
+      // Session temporarily unavailable (most likely mid auto-reconnect). Pause
+      // sampling rather than tearing the monitor down; resume on reconnect.
+      const missed = (this.disconnectedTicks.get(sessionId) || 0) + 1
+      this.disconnectedTicks.set(sessionId, missed)
+      if (missed >= this.maxDisconnectedTicks) {
+        this.stop(sessionId, true)
+      }
       return
     }
+    // Connected: clear any prior pause counter.
+    this.disconnectedTicks.delete(sessionId)
 
     const data = await this.collectData(sessionId)
     for (const win of BrowserWindow.getAllWindows()) {
@@ -393,7 +407,7 @@ class ServerMonitor {
         const tx = parseInt(stats[8]) || 0
         currentInterfaces.set(name, { rx, tx })
 
-        const isVirtual = /^(docker|veth|br-|cali|flannel|cni|virbr|lxc|tun|tap|wg|tailscale|zt|vnet|qbr|qvo|qvb)/i.test(name)
+        const isVirtual = /^(docker|veth|br-|cali|flannel|cni|virbr|lxc|vnet|qbr|qvo|qvb)/i.test(name)
         if (!isVirtual) {
           totalRx += rx
           totalTx += tx

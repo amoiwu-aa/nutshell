@@ -14,7 +14,6 @@ import {
   Trash2,
   Edit,
   MoreVertical,
-  Sparkles,
   Container,
   ArrowRightLeft,
   Terminal
@@ -368,28 +367,6 @@ export function Sidebar() {
               aria-label="底部面板"
             >
               <Code2 className="w-4 h-4 text-muted-foreground" />
-            </button>
-            <button
-              onClick={() => {
-                const event = new CustomEvent('app:toggleMonitorPanel')
-                window.dispatchEvent(event)
-              }}
-              className="p-1.5 hover:bg-accent rounded-md transition-colors"
-              title="服务器监控面板"
-              aria-label="服务器监控面板"
-            >
-              <Activity className="w-4 h-4 text-muted-foreground" />
-            </button>
-            <button
-              onClick={() => {
-                const event = new CustomEvent('app:openScriptWorkshop')
-                window.dispatchEvent(event)
-              }}
-              className="p-1.5 hover:bg-accent rounded-md transition-colors"
-              title="AI 脚本工坊"
-              aria-label="AI 脚本工坊"
-            >
-              <Sparkles className="w-4 h-4 text-muted-foreground" />
             </button>
           </div>
           <button

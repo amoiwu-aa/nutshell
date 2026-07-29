@@ -22,6 +22,11 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
+// Short, collision-resistant prefix for per-transfer temp file names.
+function uniqueTempPrefix(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 export interface ContainerInfo {
   id: string
   name: string
@@ -41,8 +46,72 @@ export interface ImageInfo {
   created: string
 }
 
+export interface NetworkInfo {
+  id: string
+  name: string
+  driver: string
+  scope: string
+}
+
+export interface DockerOverview {
+  containers: ContainerInfo[]
+  images: ImageInfo[]
+  networks: NetworkInfo[]
+}
+
+// Centralized list commands so single-resource and batched `overview` calls
+// always use identical formatting (and stay in sync).
+const CMD_LIST_CONTAINERS =
+  'docker ps -a --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.State}}|{{.Ports}}|{{.CreatedAt}}|{{.Size}}" 2>&1'
+const CMD_LIST_IMAGES =
+  'docker images --format "{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedAt}}" 2>&1'
+const CMD_LIST_NETWORKS =
+  'docker network ls --format "{{.ID}}|{{.Name}}|{{.Driver}}|{{.Scope}}" 2>&1'
+// Marker used to split a single batched exec into per-resource sections.
+const OVERVIEW_SEP = '__NUTSHELL_DOCKER_SEP__'
+
 class DockerManager {
   private activeLogStreams = new Map<string, string>()
+
+  private static dockerUnavailable(output: string): boolean {
+    return output.includes('command not found') || output.includes('Cannot connect to the Docker daemon')
+  }
+
+  private parseContainers(output: string): ContainerInfo[] {
+    return output.trim().split('\n').filter(Boolean).map((line) => {
+      const parts = line.split('|')
+      return {
+        id: parts[0] || '',
+        name: parts[1] || '',
+        image: parts[2] || '',
+        status: parts[3] || '',
+        state: parts[4] || '',
+        ports: parts[5] || '',
+        created: parts[6] || '',
+        size: parts[7] || ''
+      }
+    })
+  }
+
+  private parseImages(output: string): ImageInfo[] {
+    return output.trim().split('\n').filter(Boolean).map((line) => {
+      const parts = line.split('|')
+      return {
+        id: parts[0] || '',
+        repository: parts[1] || '',
+        tag: parts[2] || '',
+        size: parts[3] || '',
+        created: parts[4] || ''
+      }
+    })
+  }
+
+  private parseNetworks(output: string): NetworkInfo[] {
+    return output.trim().split('\n').filter(Boolean).map((line) => {
+      const parts = line.split('|')
+      return { id: parts[0] || '', name: parts[1] || '', driver: parts[2] || '', scope: parts[3] || '' }
+    })
+  }
 
   private async exec(sessionId: string, command: string, timeoutMs: number = 30000, requireConfirmation: boolean = false): Promise<string> {
     if (!isRustSession(sessionId)) {
@@ -62,50 +131,40 @@ class DockerManager {
   }
 
   async listContainers(sessionId: string): Promise<ContainerInfo[]> {
-    const output = await this.exec(
-      sessionId,
-      'docker ps -a --format "{{.ID}}|{{.Names}}|{{.Image}}|{{.Status}}|{{.State}}|{{.Ports}}|{{.CreatedAt}}|{{.Size}}" 2>&1'
-    )
-
-    if (output.includes('command not found') || output.includes('Cannot connect')) {
+    const output = await this.exec(sessionId, CMD_LIST_CONTAINERS)
+    if (DockerManager.dockerUnavailable(output)) {
       throw new Error('Docker is not available on this server')
     }
-
-    return output.trim().split('\n').filter(Boolean).map((line) => {
-      const parts = line.split('|')
-      return {
-        id: parts[0] || '',
-        name: parts[1] || '',
-        image: parts[2] || '',
-        status: parts[3] || '',
-        state: parts[4] || '',
-        ports: parts[5] || '',
-        created: parts[6] || '',
-        size: parts[7] || ''
-      }
-    })
+    return this.parseContainers(output)
   }
 
   async listImages(sessionId: string): Promise<ImageInfo[]> {
-    const output = await this.exec(
-      sessionId,
-      'docker images --format "{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Size}}|{{.CreatedAt}}" 2>&1'
-    )
-
-    if (output.includes('command not found')) {
+    const output = await this.exec(sessionId, CMD_LIST_IMAGES)
+    if (DockerManager.dockerUnavailable(output)) {
       throw new Error('Docker is not available on this server')
     }
+    return this.parseImages(output)
+  }
 
-    return output.trim().split('\n').filter(Boolean).map((line) => {
-      const parts = line.split('|')
-      return {
-        id: parts[0] || '',
-        repository: parts[1] || '',
-        tag: parts[2] || '',
-        size: parts[3] || '',
-        created: parts[4] || ''
-      }
-    })
+  /**
+   * Fetch containers, images and networks in a single SSH/exec round-trip.
+   * Collapses three sequential channel-opening commands into one, which both
+   * speeds up first paint of the Docker panel and reduces SSH channel churn.
+   */
+  async getOverview(sessionId: string): Promise<DockerOverview> {
+    const command = [CMD_LIST_CONTAINERS, CMD_LIST_IMAGES, CMD_LIST_NETWORKS].join(
+      ` ; echo "${OVERVIEW_SEP}" ; `
+    )
+    const output = await this.exec(sessionId, command, 30000)
+    if (DockerManager.dockerUnavailable(output)) {
+      throw new Error('Docker is not available on this server')
+    }
+    const [containersPart = '', imagesPart = '', networksPart = ''] = output.split(OVERVIEW_SEP)
+    return {
+      containers: this.parseContainers(containersPart),
+      images: this.parseImages(imagesPart),
+      networks: this.parseNetworks(networksPart)
+    }
   }
 
   async containerAction(sessionId: string, containerId: string, action: string): Promise<string> {
@@ -267,7 +326,9 @@ class DockerManager {
 
     const tempDir = '/tmp/nutshell-transfer'
     const filename = path.basename(localPath)
-    const remoteTempPath = `${tempDir}/${filename}`
+    // Unique prefix prevents concurrent transfers of same-named files from
+    // clobbering each other's temp file.
+    const remoteTempPath = `${tempDir}/${uniqueTempPrefix()}-${filename}`
 
     await this.exec(sessionId, `mkdir -p "${tempDir}"`)
     if (isRustSession(sessionId)) {
@@ -289,7 +350,7 @@ class DockerManager {
 
     const tempDir = '/tmp/nutshell-transfer'
     const filename = path.basename(containerPath)
-    const remoteTempPath = `${tempDir}/${filename}`
+    const remoteTempPath = `${tempDir}/${uniqueTempPrefix()}-${filename}`
 
     await this.exec(sessionId, `mkdir -p "${tempDir}"`)
     const result = await this.exec(sessionId, `docker cp "${containerId}:${containerPath.replace(/"/g, '\\"')}" "${remoteTempPath}" 2>&1`)
@@ -317,13 +378,10 @@ class DockerManager {
     }
   }
 
-  async listNetworks(sessionId: string): Promise<any[]> {
-    const output = await this.exec(sessionId, 'docker network ls --format "{{.ID}}|{{.Name}}|{{.Driver}}|{{.Scope}}" 2>&1')
-    if (output.includes('command not found')) throw new Error('Docker not available')
-    return output.trim().split('\n').filter(Boolean).map((line) => {
-      const p = line.split('|')
-      return { id: p[0] || '', name: p[1] || '', driver: p[2] || '', scope: p[3] || '' }
-    })
+  async listNetworks(sessionId: string): Promise<NetworkInfo[]> {
+    const output = await this.exec(sessionId, CMD_LIST_NETWORKS)
+    if (DockerManager.dockerUnavailable(output)) throw new Error('Docker not available')
+    return this.parseNetworks(output)
   }
 
   async createNetwork(sessionId: string, name: string, driver: string = 'bridge', subnet?: string): Promise<string> {
@@ -366,6 +424,16 @@ class DockerManager {
     let config: any = {}
     try { config = JSON.parse(output.trim()) } catch {}
     config['registry-mirrors'] = mirrors
+
+    // Back up the existing daemon.json (if present) before overwriting, so a bad
+    // merge or conflict with config-management can be rolled back.
+    await this.exec(
+      sessionId,
+      `[ -f /etc/docker/daemon.json ] && sudo cp -a /etc/docker/daemon.json /etc/docker/daemon.json.nutshell.bak || true`,
+      15000,
+      true
+    ).catch(() => { /* best-effort backup */ })
+
     return this.exec(sessionId, `echo ${shellQuote(JSON.stringify(config, null, 2))} | sudo tee /etc/docker/daemon.json 2>&1`, 30000, true)
   }
 

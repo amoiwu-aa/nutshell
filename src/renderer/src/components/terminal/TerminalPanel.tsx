@@ -20,8 +20,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
-import { Search, X, ChevronUp, ChevronDown, SplitSquareHorizontal, Columns, Sparkles, Copy, ClipboardPaste, TextSelect, Eraser } from 'lucide-react'
-import { AIAssistant } from './AIAssistant'
+import { Search, X, ChevronUp, ChevronDown, SplitSquareHorizontal, Columns, Copy, ClipboardPaste, TextSelect, Eraser } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useToast } from '../ui/Toast'
@@ -207,7 +206,12 @@ function TerminalInstance({
   useEffect(() => {
     isActiveRef.current = isActive
     // flushBufferedOutput gracefully switches between RAF (active) and setTimeout (inactive).
-    // No need to cancel or artificially flush anything here.
+    // Also stop the cursor-blink repaint loop for hidden/inactive terminals to
+    // avoid needless idle CPU/GPU work when many tabs are open.
+    const terminal = terminalRef.current
+    if (terminal) {
+      try { terminal.options.cursorBlink = isActive } catch { /* ignore */ }
+    }
   }, [isActive])
 
   useEffect(() => {
@@ -221,7 +225,7 @@ function TerminalInstance({
       theme: termTheme,
       fontSize,
       fontFamily,
-      cursorBlink: true,
+      cursorBlink: isActiveRef.current,
       cursorStyle: 'bar',
       scrollback: currentProfile.scrollback,
       convertEol: !aiCompatibilityMode,
@@ -233,7 +237,9 @@ function TerminalInstance({
       macOptionIsMeta: true,
       rightClickSelectsWord: false,
       smoothScrollDuration: 0,
-      allowTransparency: true
+      allowTransparency: colorTheme === 'theme-glass',
+      fastScrollModifier: 'alt',
+      fastScrollSensitivity: 10
     })
 
     const fitAddon = new FitAddon()
@@ -320,13 +326,6 @@ function TerminalInstance({
       if (interactionProfileRef.current === profile) return
       interactionProfileRef.current = profile
       backpressureNotifiedRef.current = false
-
-      if (profile === 'heavy-cli' && !frozenThemeRef.current) {
-        frozenThemeRef.current = {
-          terminalThemeId: selectedTerminalTheme,
-          useGlass: false
-        }
-      }
 
       const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
       terminal.options.scrollback = nextProfile.scrollback
@@ -587,7 +586,7 @@ function TerminalInstance({
         <span>{`引擎: ${engine === 'rust' ? 'Rust' : 'Node'} · 渲染器: ${formatRendererModeLabel(effectiveRenderer)}`}</span>
         <span>
           {getTerminalInteractionProfileConfig(interactionProfileRef.current, aiCompatibilityMode).label}
-          {interactionProfileRef.current === 'heavy-cli' ? ' · 主题已锁定' : ''}
+          {interactionProfileRef.current === 'heavy-cli' ? '重交互 CLI' : ''}
           {' · '}Unicode {TERMINAL_UNICODE_VERSION}
         </span>
       </div>
@@ -667,7 +666,6 @@ function TerminalInstance({
 // Main panel with split support + AI assistant
 export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: TerminalPanelProps) {
   const [splitMode, setSplitMode] = useState<'none' | 'horizontal' | 'vertical'>('none')
-  const [showAI, setShowAI] = useState(false)
   const terminalInstanceRef = useRef<Terminal | null>(null)
   const { toast } = useToast()
   const handlePrimaryTerminalRef = useCallback((ref: Terminal | null) => {
@@ -749,9 +747,6 @@ export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: T
             <SplitSquareHorizontal className="w-3.5 h-3.5" />
           </button>
           <div className="w-px h-4 bg-border mx-0.5" />
-          <button onClick={() => setShowAI(!showAI)} className={cn('p-1 rounded transition-colors', showAI ? 'bg-primary/20 text-primary' : 'hover:bg-accent text-muted-foreground')} title="AI 助手">
-            <Sparkles className="w-3.5 h-3.5" />
-          </button>
         </div>
 
         {splitMode === 'none' ? (
@@ -768,16 +763,6 @@ export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: T
           </div>
         )}
       </div>
-
-      {showAI && (
-        <AIAssistant
-          sessionId={sessionId}
-          onInsertCommand={handleInsertCommand}
-          onExecuteAndCapture={executeAndCapture}
-          getTerminalContent={getTerminalContent}
-          onClose={() => setShowAI(false)}
-        />
-      )}
     </div>
   )
 }

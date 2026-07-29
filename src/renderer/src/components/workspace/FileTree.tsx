@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, memo } from 'react'
 import {
   ChevronRight, ChevronDown, File, Folder, FolderOpen, RefreshCw, Search,
   Plus, FolderPlus, Trash2, Pencil, Copy, Upload, Download, MoreHorizontal, X
@@ -43,7 +43,7 @@ interface ContextMenuState {
   x: number; y: number; entry: FileEntry | null; parentPath: string
 }
 
-function TreeNode({ entry, sessionId, depth, gitChanges, onFileOpen, onContextMenu, reloadKey }: {
+const TreeNode = memo(function TreeNode({ entry, sessionId, depth, gitChanges, onFileOpen, onContextMenu, reloadKey }: {
   entry: FileEntry; sessionId: string; depth: number; gitChanges?: Map<string, string>
   onFileOpen: (path: string) => void; onContextMenu: (e: React.MouseEvent, entry: FileEntry) => void
   reloadKey: number
@@ -105,7 +105,7 @@ function TreeNode({ entry, sessionId, depth, gitChanges, onFileOpen, onContextMe
       ))}
     </div>
   )
-}
+})
 
 export function FileTree({ sessionId, rootPath, gitChanges, onFileOpen, onRefresh }: FileTreeProps) {
   const [entries, setEntries] = useState<FileEntry[]>([])

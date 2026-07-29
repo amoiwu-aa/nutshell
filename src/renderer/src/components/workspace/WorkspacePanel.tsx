@@ -12,7 +12,7 @@ function safeTerminalFit(terminal: any, addon: any, container: HTMLElement | nul
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
-  Sparkles, Terminal, GitBranch, Search, AlertCircle, AlertTriangle,
+  Terminal, GitBranch, Search, AlertCircle, AlertTriangle,
   List, X, FileCode, GitCompare
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -22,7 +22,6 @@ import { Breadcrumbs, OutlinePanel } from './Breadcrumbs'
 import { DiffView } from './DiffView'
 import { SearchPanel } from './SearchPanel'
 import { ProblemsPanel, type Diagnostic } from './ProblemsPanel'
-import { WorkspaceAI } from './WorkspaceAI'
 import { Terminal as XTerminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -73,7 +72,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [diffFile, setDiffFile] = useState<string | null>(null)
-  const [showAI, setShowAI] = useState(false)
   const [sidebarView, setSidebarView] = useState<SidebarView>('files')
   const [showSidebar, setShowSidebar] = useState(true)
   const [showBottom, setShowBottom] = useState(true) // default open
@@ -212,12 +210,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
 
           <div className="flex-1" />
 
-          <button onClick={() => setShowAI(!showAI)} title="AI 助手"
-            className="w-[48px] h-[48px] flex items-center justify-center transition-colors"
-            style={{ color: showAI ? '#ffffff' : '#858585', borderLeft: showAI ? '2px solid #ffffff' : '2px solid transparent' }}>
-            <Sparkles className="w-[22px] h-[22px]" />
-          </button>
-
         </div>
 
         {/* === Sidebar === */}
@@ -294,24 +286,6 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
             </>
           )}
         </div>
-
-        {/* === AI Panel === */}
-        {showAI && (
-          <WorkspaceAI sessionId={sessionId} rootPath={rootPath}
-            currentFile={currentFile ? { path: currentFile.path, content: currentFile.content, language: currentFile.language } : null}
-            onInsertCode={(code) => { if (currentFile) handleContentChange(currentFile.path, currentFile.content + '\n' + code) }}
-            onExecuteCommand={handleExecuteCommand} onOpenFile={(p) => handleFileOpen(p)} onWriteFile={handleWriteFile}
-            onInputFocusChange={setAiInputFocused}
-            onReviewDiff={(path, original, modified) => {
-              const lang = detectLang(path.split('/').pop() || '')
-              setDiffFile(null) // clear old diff
-              // Use a special diff review state
-              setDiffFile(path)
-              // Open the file in editor first
-              handleFileOpen(path).then(() => setDiffFile(path))
-            }}
-            onClose={() => setShowAI(false)} />
-        )}
       </div>
 
       {/* === Status Bar (Cursor blue) === */}
@@ -519,7 +493,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
 
       const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
       term.options.scrollback = nextProfile.scrollback
-      safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null)
+      safeTerminalFit(termRef.current, fitAddonRef.current, containerRef.current || (termRef.current?.element) || null)
 
       if (rendererDisposeRef.current) {
         rendererDisposeRef.current()
@@ -699,7 +673,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
       term.options.minimumContrastRatio = 1
       term.options.lineHeight = 1.15
       term.options.letterSpacing = 0
-      safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null)
+      safeTerminalFit(termRef.current, fitAddonRef.current, containerRef.current || (termRef.current?.element) || null)
     } catch { }
   }, [fontSize, fontFamily, aiCompatibilityMode])
 

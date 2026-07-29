@@ -20,6 +20,16 @@ export function registerDockerHandlers(): void {
     }
   })
 
+  // Batched fetch: containers + images + networks in one round-trip.
+  ipcMain.handle('docker:overview', async (_event, sessionId: string) => {
+    try {
+      const overview = await dockerManager.getOverview(sessionId)
+      return { success: true, ...overview }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle(
     'docker:containerAction',
     async (_event, sessionId: string, containerId: string, action: string) => {

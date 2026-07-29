@@ -132,7 +132,6 @@ export function MonacoEditorWrapper({
         showTypeParameters: true,
         showSnippets: true,
         preview: true,
-        detailsVisible: true,
       },
       quickSuggestions: { other: true, comments: false, strings: true },
       parameterHints: { enabled: true },
