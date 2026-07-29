@@ -14,3 +14,8 @@ dummy_*.bin
 
 # Rust scratch files
 native/nutshell-core/temp.rs
+
+# Scratch output from manual debugging runs
+dev_output*.txt
+dev_test*.txt
+*_diff.txt
