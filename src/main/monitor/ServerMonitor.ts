@@ -1,6 +1,14 @@
 import { BrowserWindow } from 'electron'
+import * as crypto from 'crypto'
 import { sshManager } from '../ssh/SSHManager'
 import { rustCoreService } from '../rust/RustCoreService'
+
+// Several metrics are collected by batching commands into one exec and slicing
+// the output on a marker. A fixed marker can legitimately appear in that output
+// (a process command line, a file path) and shift every field after it, so it
+// is randomised per run.
+const SECTION_MARKER = `__NUTSHELL_SEC_${crypto.randomBytes(8).toString('hex')}__`
+const SECTION_JOINER = ` ; echo "${SECTION_MARKER}" ; `
 
 export interface DiskInfo {
   filesystem: string
@@ -483,7 +491,7 @@ class ServerMonitor {
       fastCmdMap.push('network')
     }
 
-    const fastCombined = fastCommands.join(' ; echo "---SEP---" ; ')
+    const fastCombined = fastCommands.join(SECTION_JOINER)
     const fastPromise = this.exec(sessionId, fastCombined)
 
     // === Trigger Slow Metrics Background Batch (~300-800ms) ===
@@ -509,10 +517,10 @@ class ServerMonitor {
       }
 
       if (slowCommands.length > 0) {
-        const slowCombined = slowCommands.join(' ; echo "---SEP---" ; ')
+        const slowCombined = slowCommands.join(SECTION_JOINER)
         // Fire and forget (it will update cache) - fast ticks don't block
         this.exec(sessionId, slowCombined).then((slowOutput) => {
-          const parts = slowOutput.split('---SEP---').map((s) => s.trim())
+          const parts = slowOutput.split(SECTION_MARKER).map((s) => s.trim())
           const getPart = (name: string): string => {
             const idx = slowCmdMap.indexOf(name)
             return idx >= 0 ? (parts[idx] || '') : ''
@@ -537,7 +545,7 @@ class ServerMonitor {
 
     // Await fast metrics
     const fastOutput = await fastPromise
-    const fastParts = fastOutput.split('---SEP---').map((s) => s.trim())
+    const fastParts = fastOutput.split(SECTION_MARKER).map((s) => s.trim())
     const getFastPart = (name: string): string => {
       const idx = fastCmdMap.indexOf(name)
       return idx >= 0 ? (fastParts[idx] || '') : ''
@@ -636,8 +644,8 @@ class ServerMonitor {
       }
 
       if (commands.length > 0) {
-        this.exec(sessionId, commands.join(' ; echo "---SEP---" ; ')).then((fallbackOutput) => {
-          const parts = fallbackOutput.split('---SEP---').map((s) => s.trim())
+        this.exec(sessionId, commands.join(SECTION_JOINER)).then((fallbackOutput) => {
+          const parts = fallbackOutput.split(SECTION_MARKER).map((s) => s.trim())
           const getPart = (name: string): string => {
             const idx = cmdMap.indexOf(name)
             return idx >= 0 ? (parts[idx] || '') : ''
@@ -685,9 +693,9 @@ class ServerMonitor {
       `hostname`,
       `cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo "Linux"`,
       `uname -sr`, `nproc`, `uname -m`
-    ].join(' ; echo "---SEP---" ; ')
+    ].join(SECTION_JOINER)
     const output = await this.exec(sessionId, cmd, 10000)
-    const parts = output.split('---SEP---').map((s) => s.trim())
+    const parts = output.split(SECTION_MARKER).map((s) => s.trim())
     return {
       hostname: parts[0] || 'unknown', os: parts[1] || 'Linux',
       kernel: parts[2] || 'unknown', cpuCores: parseInt(parts[3]) || 1, arch: parts[4] || 'unknown'

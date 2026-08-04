@@ -1,19 +1,4 @@
 
-function safeTerminalFit(terminal: any, addon: any, container: HTMLElement | null) {
-  try {
-    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
-    // _renderService.dimensions is a getter that throws if the internal
-    // _renderer has not been attached yet (e.g. before WebGL/Canvas/DOM addon
-    // is loaded).  Guard against that by checking _renderer.value first.
-    const rs = terminal?._core?._renderService
-    if (rs && rs._renderer?.value) {
-      if (typeof addon?.fit === 'function') {
-        addon.fit()
-      }
-    }
-  } catch(e) {}
-}
-
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'

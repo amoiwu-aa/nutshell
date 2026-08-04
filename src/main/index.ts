@@ -89,8 +89,17 @@ function createWindow(): void {
   mainWindow.on('maximize', saveBounds)
   mainWindow.on('unmaximize', saveBounds)
 
+  // Only ever hand http(s) to the OS. `shell.openExternal` will happily launch
+  // file:// and custom protocol handlers, and the URL can originate from remote
+  // output rendered in the terminal or an editor.
+  const openExternalIfSafe = (url: string): void => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url)
+    }
+  }
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalIfSafe(details.url)
     return { action: 'deny' }
   })
 
@@ -110,9 +119,7 @@ function createWindow(): void {
   const guardNavigation = (event: Electron.Event, url: string): void => {
     if (isInAppNavigation(url)) return
     event.preventDefault()
-    if (/^https?:\/\//i.test(url)) {
-      shell.openExternal(url)
-    }
+    openExternalIfSafe(url)
   }
   mainWindow.webContents.on('will-navigate', guardNavigation)
   mainWindow.webContents.on('will-redirect', guardNavigation)

@@ -1,4 +1,4 @@
-import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
+﻿import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { app, BrowserWindow } from 'electron'
@@ -899,7 +899,7 @@ class RustCoreService {
       let attempt = 0
       // Loop until reconnected, intentionally disconnected, or attempts exhausted.
       // Re-read tuning each iteration so live settings changes take effect.
-      // eslint-disable-next-line no-constant-condition
+
       while (true) {
         const tuning = getConnectionTuning()
         attempt += 1
@@ -1007,3 +1007,4 @@ class RustCoreService {
 }
 
 export const rustCoreService = new RustCoreService()
+

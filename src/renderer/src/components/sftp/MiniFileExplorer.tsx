@@ -144,7 +144,7 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
     })
 
     let fileCount = 0
-    let skippedDirCount = 0
+    const skippedDirCount = 0
     for (const dropItem of droppedFiles) {
       const { file, filePath, fileName } = dropItem
       if (!filePath) continue

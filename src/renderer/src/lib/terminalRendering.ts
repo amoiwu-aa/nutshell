@@ -8,6 +8,32 @@ export type ActiveTerminalRendererMode = 'dom' | 'webgl' | 'canvas'
 export const DEFAULT_SSH_TERM = 'xterm-256color'
 export const TERMINAL_UNICODE_VERSION = '11'
 
+/**
+ * Fit the terminal to its container, tolerating the states where xterm cannot
+ * measure yet.
+ *
+ * `_renderService.dimensions` is a getter that throws before a renderer addon
+ * (WebGL/Canvas/DOM) has attached, and fitting a zero-sized container yields NaN
+ * dimensions, so both are checked before calling through.
+ */
+export function safeTerminalFit(
+  terminal: Terminal | null | undefined,
+  addon: { fit?: () => void } | null | undefined,
+  container: HTMLElement | null
+): void {
+  if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
+
+  const renderService = (terminal as unknown as { _core?: { _renderService?: { _renderer?: { value?: unknown } } } })
+    ?._core?._renderService
+  if (!renderService?._renderer?.value) return
+
+  try {
+    addon?.fit?.()
+  } catch {
+    // A fit racing with teardown is harmless; the next resize corrects it.
+  }
+}
+
 export const TERMINAL_DIAGNOSTIC_THEME = {
   background: '#111827',
   foreground: '#e5e7eb',

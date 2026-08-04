@@ -9,9 +9,12 @@
 - **服务器监控** - CPU、内存、磁盘、网络实时图表 + 进程管理
 - **Docker 管理** - 容器管理、镜像操作、日志查看、容器终端
 - **端口转发** - 本地/远程/动态(SOCKS5)端口转发，可视化规则管理
+- **远程工作区** - 远程文件树、全文搜索、Git 状态与 diff、Monaco 编辑器
 - **命令片段** - 常用命令保存、变量模板、批量执行、导入导出
 - **密钥管理** - 密码/密钥认证、跳板机支持
+- **主机密钥校验** - 首次连接记录指纹，变更时中断连接以防中间人攻击
 - **安全存储** - AES-256-CBC 加密存储密码和密钥
+- **双引擎** - Node (ssh2) 与 Rust (russh) 内核可切换，后者用于高速 SFTP 传输
 - **主题切换** - 亮色/暗色/跟随系统，多种终端配色方案
 
 ## 技术栈
@@ -23,7 +26,8 @@
 | 构建 | Vite + electron-vite |
 | UI | Tailwind CSS + shadcn/ui |
 | 终端 | xterm.js |
-| SSH | ssh2 (Node.js) |
+| 编辑器 | Monaco Editor |
+| SSH | ssh2 (Node.js) + russh (Rust sidecar) |
 | 图表 | Recharts |
 | 存储 | electron-store (AES 加密) |
 | 打包 | electron-builder |
@@ -71,11 +75,16 @@ npm run build:linux
 ## 项目结构
 
 ```
+native/
+└── nutshell-core/           # Rust sidecar (russh + russh-sftp)
+
 src/
 ├── main/                    # Electron 主进程
-│   ├── ssh/                 # SSH/SFTP/端口转发核心
+│   ├── ssh/                 # SSH/SFTP/端口转发/主机密钥/连接调优
 │   ├── monitor/             # 服务器监控采集
 │   ├── docker/              # Docker 远程管理
+│   ├── workspace/           # 远程工作区（浏览、搜索、git）
+│   ├── rust/                # Rust 内核进程管理与远程文件系统
 │   ├── store/               # 加密配置存储
 │   └── ipc/                 # IPC 通信处理
 ├── preload/                 # 安全桥接层
@@ -86,8 +95,10 @@ src/
     │   ├── sftp/            # 文件管理组件
     │   ├── monitor/         # 监控仪表盘
     │   ├── docker/          # Docker 面板
+    │   ├── workspace/       # 远程工作区与编辑器
     │   ├── snippet/         # 命令片段管理
     │   ├── portforward/     # 端口转发
+    │   ├── transfer/        # 传输队列
     │   ├── connection/      # 连接管理
     │   └── settings/        # 设置面板
     └── stores/              # 状态管理 (Zustand)

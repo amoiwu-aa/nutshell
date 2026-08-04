@@ -837,7 +837,7 @@ class SFTPManager {
 
     // Create remote directories (sorted by depth so parents come first)
     const sortedDirs = Array.from(remoteDirs).sort((a, b) => a.split('/').length - b.split('/').length)
-    let sftp = await this.getFreshSFTP(sessionId)
+    const sftp = await this.getFreshSFTP(sessionId)
     for (const dir of [safePath, ...sortedDirs]) {
       try {
         await new Promise<void>((resolve, reject) => {

@@ -1,4 +1,4 @@
-node_modules/
+﻿node_modules/
 dist/
 out/
 native/nutshell-core/target/
@@ -19,3 +19,7 @@ native/nutshell-core/temp.rs
 dev_output*.txt
 dev_test*.txt
 *_diff.txt
+
+# Tool-generated browser snapshots
+.playwright-mcp/
+

@@ -565,7 +565,7 @@ export function FileExplorer({ sessionId, tabId, containerId }: FileExplorerProp
       })
 
       let queuedCount = 0
-      let skippedDirCount = 0
+      const skippedDirCount = 0
       for (const dropItem of droppedFiles) {
         const { file, filePath, fileName } = dropItem
         if (!filePath) continue

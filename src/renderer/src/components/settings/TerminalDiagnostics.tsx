@@ -1,15 +1,4 @@
 
-function safeTerminalFit(terminal: any, addon: any, container: HTMLElement | null) {
-  try {
-    if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return
-    if (terminal?._core?._renderService) {
-      if (typeof addon?.fit === 'function') {
-        addon.fit()
-      }
-    }
-  } catch(e) {}
-}
-
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
