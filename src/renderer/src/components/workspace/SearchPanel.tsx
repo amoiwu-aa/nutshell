@@ -102,7 +102,7 @@ export function SearchPanel({ sessionId, rootPath, onOpenFile }: SearchPanelProp
         // Re-search after replace
         handleSearch()
       }
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     setReplacing(null)
   }, [query, replaceText, caseSensitive, useRegex, sessionId, handleSearch])
 

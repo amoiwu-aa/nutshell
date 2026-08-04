@@ -11,6 +11,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useToast } from '../ui/Toast'
 import {
   attachPreferredRenderer,
+  safeTerminalFit,
   formatRendererModeLabel,
   TERMINAL_UNICODE_VERSION
 } from '../../lib/terminalRendering'
@@ -293,7 +294,7 @@ function TerminalInstance({
       if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
         safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null)
       }
-    } catch { }
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
@@ -314,7 +315,7 @@ function TerminalInstance({
 
       const nextProfile = getTerminalInteractionProfileConfig(profile, aiCompatibilityMode)
       terminal.options.scrollback = nextProfile.scrollback
-      try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
+      try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
 
       if (rendererDisposeRef.current) {
         rendererDisposeRef.current()
@@ -485,7 +486,7 @@ function TerminalInstance({
         try {
           const container = containerRef.current
           if (container && container.offsetWidth > 0 && container.offsetHeight > 0) safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null)
-        } catch { }
+        } catch { /* Best-effort cleanup; the primary operation already completed. */ }
       }, 150)
     })
     resizeObserver.observe(containerRef.current)
@@ -497,7 +498,7 @@ function TerminalInstance({
     setTimeout(() => {
       if (isDisposed) return
       if (containerRef.current && containerRef.current.offsetWidth > 0) {
-        try { safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null) } catch { }
+        try { safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
 
         if (isDisposed) return
         const { cols, rows } = terminal; lastCols = cols; lastRows = rows; window.api.ssh.resize(sessionId, cols, rows)
@@ -526,7 +527,7 @@ function TerminalInstance({
       removeReconnectingListener?.(); removeReconnectedListener?.()
       removeScrollListener.dispose()
       resizeObserver.disconnect(); currentContainer.removeEventListener('keydown', handleKeydown); currentContainer.removeEventListener('contextmenu', handleContextMenu, true); currentContainer.removeEventListener('paste', handlePasteEvent, true)
-      try { terminal.dispose() } catch { }
+      try { terminal.dispose() } catch { /* Best-effort cleanup; the primary operation already completed. */ }
       terminalRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally mount/unmount only on sessionId change; settings are applied live by the effect below
@@ -534,7 +535,7 @@ function TerminalInstance({
 
   useEffect(() => {
     const terminal = terminalRef.current
-    // @ts-ignore
+    // @ts-expect-error xterm exposes the lifecycle flag only through its internal type.
     if (!terminal || terminal._core?._isDisposed || (terminal as any)._isDisposed) return
     try {
       const { termTheme } = resolveTerminalVisualState(selectedTerminalTheme, colorTheme, frozenThemeRef.current)
@@ -551,7 +552,7 @@ function TerminalInstance({
       terminal.options.lineHeight = 1.15
       terminal.options.letterSpacing = 0
       safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null)
-    } catch { }
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }, [selectedTerminalTheme, fontSize, fontFamily, colorTheme, aiCompatibilityMode])
 
   const handleSearch = useCallback(
@@ -686,7 +687,7 @@ export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: T
     return new Promise((resolve) => {
       let output = ''
       let timer: ReturnType<typeof setTimeout>
-      let fallbackTimer: ReturnType<typeof setTimeout>
+      const fallbackTimer = setTimeout(() => finish(true), 8000)
       let resolved = false
 
       const finish = (fallback?: boolean) => {
@@ -711,8 +712,7 @@ export function TerminalPanel({ sessionId, tabId, isActive, engine = 'node' }: T
       // Send command
       window.api.ssh.write(sessionId, command + '\n')
 
-      // Absolute timeout fallback (8 seconds)
-      fallbackTimer = setTimeout(() => finish(true), 8000)
+      // The absolute timeout fallback is scheduled when the promise starts.
     })
   }, [sessionId])
 

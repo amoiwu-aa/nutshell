@@ -46,6 +46,22 @@ npm install
 npm run dev
 ```
 
+### 质量检查
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+```
+
+### 构建 Rust sidecar
+
+```bash
+npm run native:build
+```
+
+打包命令会自动先构建当前平台的 Rust sidecar。
+
 ### 构建生产版本
 
 ```bash

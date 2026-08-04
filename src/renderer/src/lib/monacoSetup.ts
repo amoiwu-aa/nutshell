@@ -1,7 +1,6 @@
 import * as monaco from 'monaco-editor'
 
 try {
-  // @ts-ignore - Monaco worker setup using Vite's new URL pattern
   self.MonacoEnvironment = {
     getWorker(_: any, label: string) {
       if (label === 'json') {

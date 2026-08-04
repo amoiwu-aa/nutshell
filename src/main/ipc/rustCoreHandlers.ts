@@ -141,7 +141,7 @@ export function registerRustCoreHandlers(): void {
     try {
       return await rustCoreService.projectSummary(params)
     } catch (error: any) {
-      throw new Error(`Failed to get project summary via Rust core: ${error.message}`)
+      throw new Error(`Failed to get project summary via Rust core: ${error.message}`, { cause: error })
     }
   })
 
@@ -149,7 +149,7 @@ export function registerRustCoreHandlers(): void {
     try {
       return await rustCoreService.nativeUpload(params)
     } catch (error: any) {
-      throw new Error(`Failed to perform native upload: ${error.message}`)
+      throw new Error(`Failed to perform native upload: ${error.message}`, { cause: error })
     }
   })
 
@@ -157,7 +157,7 @@ export function registerRustCoreHandlers(): void {
     try {
       return await rustCoreService.nativeDownload(params)
     } catch (error: any) {
-      throw new Error(`Failed to perform native download: ${error.message}`)
+      throw new Error(`Failed to perform native download: ${error.message}`, { cause: error })
     }
   })
 
@@ -165,7 +165,7 @@ export function registerRustCoreHandlers(): void {
     try {
       return await rustCoreService.cancelNativeTransfer(params)
     } catch (error: any) {
-      throw new Error(`Failed to cancel native transfer: ${error.message}`)
+      throw new Error(`Failed to cancel native transfer: ${error.message}`, { cause: error })
     }
   })
 }

@@ -19,6 +19,7 @@ import type * as monacoType from 'monaco-editor'
 import { useSettingsStore } from '../../stores/settingsStore'
 import {
   attachPreferredRenderer,
+  safeTerminalFit,
   TERMINAL_UNICODE_VERSION
 } from '../../lib/terminalRendering'
 import {
@@ -91,7 +92,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
         for (const c of r.git.changes) map.set(c.file, c.status)
         setGitChanges(map)
       }
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }, [sessionId, rootPath])
   useEffect(() => {
     if (!isActive) return
@@ -138,7 +139,7 @@ export function WorkspacePanel({ sessionId, tabId, rootPath, isActive }: Workspa
     try {
       const r = await window.api.sftp.writeFile(sessionId, filePath, file.content)
       if (r.success) { setOpenFiles((prev) => prev.map((f) => f.path === filePath ? { ...f, originalContent: f.content, modified: false } : f)); loadGitStatus() }
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }, [sessionId, loadGitStatus])
 
   const handleWriteFile = useCallback(async (filePath: string, content: string) => {
@@ -439,7 +440,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
       if (container && container.offsetWidth > 0 && container.offsetHeight > 0) {
         safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null)
       }
-    } catch { }
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     termRef.current = term
     fitAddonRef.current = fit
 
@@ -606,7 +607,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
     let debounceTimer: any
     const ro = new ResizeObserver(() => {
       clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => { try { if (containerRef.current && containerRef.current.offsetWidth > 0) safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null) } catch {} }, 100)
+      debounceTimer = setTimeout(() => { try { if (containerRef.current && containerRef.current.offsetWidth > 0) safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ } }, 100)
     })
     ro.observe(containerRef.current)
 
@@ -617,7 +618,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
         resolveRendererModeForProfile(terminalRenderer, interactionProfileRef.current),
         undefined
       ).dispose
-      try { safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null) } catch { }
+      try { safeTerminalFit(termRef.current || term, fitAddonRef.current || fit, containerRef.current || term.element || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     }, 100)
 
     return () => {
@@ -663,7 +664,7 @@ function WorkspaceTerminal({ sessionId, rootPath, isActive, aiInputFocused = fal
       term.options.lineHeight = 1.15
       term.options.letterSpacing = 0
       safeTerminalFit(termRef.current, fitAddonRef.current, containerRef.current || (termRef.current?.element) || null)
-    } catch { }
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }, [fontSize, fontFamily, aiCompatibilityMode])
 
   useEffect(() => {

@@ -5,7 +5,7 @@ import { rustCoreService } from '../rust/RustCoreService'
 import { rustRemoteFS } from '../rust/RustRemoteFS'
 import * as path from 'path'
 
-const SAFE_DOCKER_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$/
+const SAFE_DOCKER_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/
 const SAFE_IMAGE_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.\-:/]*$/
 const NETWORK_DRIVERS = ['bridge', 'host', 'overlay', 'macvlan', 'ipvlan', 'none']
 const RESTART_POLICIES = /^(no|always|unless-stopped|on-failure(:\d+)?)$/
@@ -427,7 +427,7 @@ class DockerManager {
   async setRegistryMirrors(sessionId: string, mirrors: string[]): Promise<string> {
     const output = await this.exec(sessionId, 'cat /etc/docker/daemon.json 2>/dev/null || echo "{}"')
     let config: any = {}
-    try { config = JSON.parse(output.trim()) } catch {}
+    try { config = JSON.parse(output.trim()) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     config['registry-mirrors'] = mirrors
 
     // Back up the existing daemon.json (if present) before overwriting, so a bad

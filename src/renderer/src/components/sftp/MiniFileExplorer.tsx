@@ -134,12 +134,13 @@ export function MiniFileExplorer({ sessionId }: MiniFileExplorerProps) {
 
     // Extract file info synchronously because DataTransfer.files object gets wiped by the browser upon the first 'await'
     const droppedFiles = Array.from(e.dataTransfer.files).map(file => {
-      let filePath = ''
-      try {
-        filePath = window.api.file?.getPathForFile?.(file) || (file as any).path || ''
-      } catch {
-        filePath = (file as any).path || ''
-      }
+      const filePath = (() => {
+        try {
+          return window.api.file?.getPathForFile?.(file) || (file as any).path || ''
+        } catch {
+          return (file as any).path || ''
+        }
+      })()
       return { file, filePath, fileName: filePath.split(/[/\\]/).pop() || file.name, size: file.size || 0 }
     })
 

@@ -725,7 +725,9 @@ class ServerMonitor {
       const cols = line.split(/\s+/).filter(Boolean)
 
       if (cols.length >= 5) {
-        let protocol = '', localAddr = '', port = 0, pid = 0, process = '', state = ''
+        let protocol: string, localAddr: string, port: number, state: string
+        let pid = 0
+        let process = ''
 
         if (cols[0] === 'LISTEN' || cols[0] === 'UNCONN') {
           // ss format

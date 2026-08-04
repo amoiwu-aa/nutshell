@@ -10,13 +10,17 @@
     "rust:build": "cargo build --manifest-path native/nutshell-core/Cargo.toml",
     "rust:build:release": "cargo build --release --manifest-path native/nutshell-core/Cargo.toml",
     "rust:run": "cargo run --manifest-path native/nutshell-core/Cargo.toml",
+    "native:build": "node scripts/build-native.mjs",
+    "typecheck": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "lint": "eslint src tests",
+    "test": "vitest run",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:unpack": "npm run native:build && npm run build && electron-builder --dir",
+    "build:win": "npm run native:build && npm run build && electron-builder --win",
+    "build:mac": "npm run native:build && npm run build && electron-builder --mac",
+    "build:linux": "npm run native:build && npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -81,8 +85,11 @@
         "to": "icon.png"
       },
       {
-        "from": "native/nutshell-core/target/release/nutshell-core.exe",
-        "to": "native/nutshell-core/nutshell-core.exe"
+        "from": "native/nutshell-core/target/release",
+        "to": "native/nutshell-core",
+        "filter": [
+          "nutshell-core*"
+        ]
       }
     ],
     "win": {

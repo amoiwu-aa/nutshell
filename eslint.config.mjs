@@ -47,7 +47,17 @@ export default tseslint.config(
   {
     files: ['tests/**/*.{js,ts}', '**/*.test.ts'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', require: 'readonly', module: 'writable', __dirname: 'readonly' }
+      globals: {
+        Buffer: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        __dirname: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        require: 'readonly',
+        setInterval: 'readonly',
+        setTimeout: 'readonly'
+      }
     }
   }
 )

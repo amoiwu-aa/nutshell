@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { readFileSync, statSync } from 'fs';
+import { statSync } from 'fs';
 import * as path from 'path';
 
 const exeName = process.platform === 'win32' ? 'nutshell-core.exe' : 'nutshell-core';
@@ -20,7 +20,7 @@ let resolveReady: () => void;
 const readyPromise = new Promise<void>(resolve => { resolveReady = resolve; });
 
 let stdoutBuffer = Buffer.alloc(0);
-let pendingRequests = new Map<string, {resolve: Function, reject: Function}>();
+const pendingRequests = new Map<string, { resolve: (value: any) => void; reject: (reason?: unknown) => void }>();
 let reqId = 1;
 
 proc.stdout.on('data', chunk => {
@@ -47,7 +47,7 @@ proc.stdout.on('data', chunk => {
         if (msg.success) p.resolve(msg.result);
         else p.reject(new Error(msg.error?.message));
       }
-    } catch (err) {}
+    } catch { /* Ignore malformed frames and continue reading the stream. */ }
   }
 });
 

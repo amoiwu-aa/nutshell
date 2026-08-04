@@ -164,7 +164,12 @@ export function MonitorDashboard({ sessionId, tabId, isActive }: MonitorDashboar
   }
 
   const togglePidSelect = (pid: number) => {
-    setSelectedPids((prev) => { const n = new Set(prev); n.has(pid) ? n.delete(pid) : n.add(pid); return n })
+    setSelectedPids((prev) => {
+      const next = new Set(prev)
+      if (next.has(pid)) next.delete(pid)
+      else next.add(pid)
+      return next
+    })
   }
 
   useEffect(() => { if (showProcesses) loadProcesses() }, [showProcesses])
@@ -179,9 +184,9 @@ export function MonitorDashboard({ sessionId, tabId, isActive }: MonitorDashboar
 
   const sortedProcesses = useMemo(() => [...processes].sort((a, b) => {
     const { key, dir } = processSort
-    let cmp = 0
-    if (key === 'user' || key === 'command') cmp = (a[key] || '').localeCompare(b[key] || '')
-    else cmp = (a[key] as number) - (b[key] as number)
+    const cmp = key === 'user' || key === 'command'
+      ? (a[key] || '').localeCompare(b[key] || '')
+      : (a[key] as number) - (b[key] as number)
     return dir === 'desc' ? -cmp : cmp
   }), [processes, processSort])
 
@@ -192,9 +197,9 @@ export function MonitorDashboard({ sessionId, tabId, isActive }: MonitorDashboar
     )
     return [...filtered].sort((a, b) => {
       const { key, dir } = portSort
-      let cmp = 0
-      if (key === 'process' || key === 'protocol') cmp = (a[key] || '').localeCompare(b[key] || '')
-      else cmp = (a[key] as number) - (b[key] as number)
+      const cmp = key === 'process' || key === 'protocol'
+        ? (a[key] || '').localeCompare(b[key] || '')
+        : (a[key] as number) - (b[key] as number)
       return dir === 'asc' ? cmp : -cmp
     })
   }, [ports, portSearch, portSort])

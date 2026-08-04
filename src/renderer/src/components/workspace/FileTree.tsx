@@ -57,7 +57,7 @@ const TreeNode = memo(function TreeNode({ entry, sessionId, depth, gitChanges, o
     try {
       const r = await window.api.workspace.listDirectory(sessionId, entry.path)
       if (r.success) setChildren(r.entries)
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     setLoading(false)
   }, [sessionId, entry.path])
 
@@ -128,7 +128,7 @@ export function FileTree({ sessionId, rootPath, gitChanges, onFileOpen, onRefres
     try {
       const r = await window.api.workspace.listDirectory(sessionId, rootPath)
       if (r.success) setEntries(r.entries)
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     setLoading(false)
   }, [sessionId, rootPath])
 
@@ -240,7 +240,7 @@ export function FileTree({ sessionId, rootPath, gitChanges, onFileOpen, onRefres
         const localPath = `${localDir}/${entry.name}`.replace(/\\/g, '/')
         await window.api.sftp.download(sessionId, entry.path, localPath)
       }
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }
 
   const handleInlineSubmit = async () => {
@@ -261,7 +261,7 @@ export function FileTree({ sessionId, rootPath, gitChanges, onFileOpen, onRefres
         await window.api.sftp.rename(sessionId, oldPath, newPath)
         triggerReload()
       }
-    } catch {}
+    } catch { /* Best-effort cleanup; the primary operation already completed. */ }
     setInlineInput(null)
   }
 

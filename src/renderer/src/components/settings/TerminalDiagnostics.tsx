@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css'
 import { useSettingsStore } from '../../stores/settingsStore'
 import {
   attachPreferredRenderer,
+  safeTerminalFit,
   buildTerminalDiagnosticsText,
   DEFAULT_SSH_TERM,
   formatRendererModeLabel,
@@ -80,7 +81,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
     terminal.loadAddon(unicode11Addon)
     terminal.unicode.activeVersion = TERMINAL_UNICODE_VERSION
     terminal.open(containerRef.current)
-    try { safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null) } catch { }
+    try { safeTerminalFit(terminalRef.current || terminal, fitAddon, containerRef.current || terminal.element || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
 
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
@@ -110,7 +111,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
     terminal.options.minimumContrastRatio = 1
     terminal.options.lineHeight = 1.15
     terminal.options.letterSpacing = 0
-    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
+    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }, [fontSize, fontFamily, aiCompatibilityMode])
 
   useEffect(() => {
@@ -119,7 +120,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
 
     rendererDisposeRef.current?.()
     rendererDisposeRef.current = attachPreferredRenderer(terminal, terminalRenderer, setEffectiveRenderer).dispose
-    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
+    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
 
     return () => {
       rendererDisposeRef.current?.()
@@ -139,7 +140,7 @@ export function TerminalDiagnostics({ sessionId }: TerminalDiagnosticsProps) {
         aiCompatibilityMode
       })
     )
-    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { }
+    try { safeTerminalFit(terminalRef.current, fitAddonRef.current, containerRef.current || (terminalRef.current?.element) || null) } catch { /* Best-effort cleanup; the primary operation already completed. */ }
   }, [terminalRenderer, effectiveRenderer, aiCompatibilityMode])
 
   const envEntries = getTerminalEnvironment(aiCompatibilityMode)

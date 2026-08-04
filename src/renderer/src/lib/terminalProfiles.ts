@@ -104,7 +104,7 @@ export function detectShellPromptReturn(output: string): boolean {
   const trimmed = output.trimEnd()
   if (trimmed.length > 80) return false
   // Must end with a typical prompt suffix and contain a username@host pattern
-  return /[\w@][\w.\-]+[:#~]\s*[\$#]\s*$/.test(trimmed) &&
+  return /[\w@][\w.-]+(?::[^\s$#]*)?\s*[$#]\s*$/.test(trimmed) &&
     !output.includes('claude') &&
     !output.includes('opencode') &&
     !output.includes('codex') &&
