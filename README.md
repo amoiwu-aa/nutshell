@@ -3,9 +3,13 @@
 [![CI](https://github.com/amoiwu-aa/nutshell/actions/workflows/ci.yml/badge.svg)](https://github.com/amoiwu-aa/nutshell/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![Nutshell: Open-source SSH workspace](docs/assets/nutshell-social-preview.png)
+
 **Nutshell** is an open-source desktop SSH remote management tool built with Electron, React, TypeScript, and Rust. It brings terminal access, SFTP, server monitoring, Docker operations, port forwarding, and a remote workspace into one focused application.
 
 > **Status:** Active development. The repository is public and welcomes issue reports, feedback, and focused contributions.
+
+[Download the latest release](https://github.com/amoiwu-aa/nutshell/releases) · [Report a bug](https://github.com/amoiwu-aa/nutshell/issues/new/choose) · [Request a feature](https://github.com/amoiwu-aa/nutshell/issues/new/choose)
 
 ## Why Nutshell?
 
