@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { sshManager } from './SSHManager'
 import * as net from 'net'
+import { buildConnectReply, parseConnectRequest, SOCKS5_REPLY, SOCKS5_VERSION } from './socks5'
 
 export interface PortForwardRule {
   id: string
@@ -13,9 +14,15 @@ export interface PortForwardRule {
   enabled: boolean
 }
 
+type TcpConnectionHandler = (info: any, accept: () => any, reject: () => void) => void
+
 interface ActiveForward {
   rule: PortForwardRule
   server?: net.Server
+  // Kept for remote forwards so removeForward can detach the exact listener
+  // from the exact client the forward was registered on
+  client?: any
+  tcpConnectionHandler?: TcpConnectionHandler
 }
 
 class PortForwardManager {
@@ -37,6 +44,8 @@ class PortForwardManager {
   private async createLocalForward(rule: PortForwardRule, client: any): Promise<void> {
     return new Promise((resolve, reject) => {
       const server = net.createServer((socket) => {
+        // Swallow socket errors that fire before the SSH channel exists
+        socket.on('error', () => {})
         client.forwardOut(
           rule.localHost,
           rule.localPort,
@@ -44,9 +53,15 @@ class PortForwardManager {
           rule.remotePort,
           (err: any, stream: any) => {
             if (err) {
-              socket.end()
+              socket.destroy()
               return
             }
+            if (socket.destroyed) {
+              stream.destroy()
+              return
+            }
+            socket.on('error', () => stream.destroy())
+            stream.on('error', () => socket.destroy())
             socket.pipe(stream).pipe(socket)
           }
         )
@@ -74,17 +89,21 @@ class PortForwardManager {
           return
         }
 
-        client.on(
-          'tcp connection',
-          (info: any, accept: () => any, _reject: () => void) => {
-            const stream = accept()
-            const socket = net.connect(rule.localPort, rule.localHost, () => {
-              socket.pipe(stream).pipe(socket)
-            })
-          }
-        )
+        // The client emits 'tcp connection' for every forwarded-in port, so
+        // each rule needs its own handler that only accepts its own port
+        const tcpConnectionHandler: TcpConnectionHandler = (info, accept, _reject) => {
+          if (info.destPort !== rule.remotePort) return
+          const stream = accept()
+          const socket = net.connect(rule.localPort, rule.localHost, () => {
+            socket.pipe(stream).pipe(socket)
+          })
+          socket.on('error', () => stream.destroy())
+          stream.on('error', () => socket.destroy())
+        }
 
-        this.forwards.set(rule.id, { rule })
+        client.on('tcp connection', tcpConnectionHandler)
+
+        this.forwards.set(rule.id, { rule, client, tcpConnectionHandler })
         this.notifyStatus(rule.id, 'active')
         resolve()
       })
@@ -94,58 +113,44 @@ class PortForwardManager {
   private async createDynamicForward(rule: PortForwardRule, client: any): Promise<void> {
     return new Promise((resolve, reject) => {
       const server = net.createServer((socket) => {
+        socket.on('error', () => {})
         // Simple SOCKS5 proxy
         socket.once('data', (data) => {
           // SOCKS5 handshake
-          if (data[0] === 0x05) {
-            socket.write(Buffer.from([0x05, 0x00])) // No auth required
-
-            socket.once('data', (request) => {
-              const cmd = request[1]
-              if (cmd !== 0x01) {
-                // Only CONNECT supported
-                socket.end()
-                return
-              }
-
-              let destHost: string
-              let destPort: number
-              const addrType = request[3]
-
-              if (addrType === 0x01) {
-                // IPv4
-                destHost = `${request[4]}.${request[5]}.${request[6]}.${request[7]}`
-                destPort = request.readUInt16BE(8)
-              } else if (addrType === 0x03) {
-                // Domain
-                const domainLen = request[4]
-                destHost = request.subarray(5, 5 + domainLen).toString()
-                destPort = request.readUInt16BE(5 + domainLen)
-              } else {
-                socket.end()
-                return
-              }
-
-              client.forwardOut(
-                rule.localHost,
-                rule.localPort,
-                destHost,
-                destPort,
-                (err: any, stream: any) => {
-                  if (err) {
-                    socket.end()
-                    return
-                  }
-
-                  const response = Buffer.from([
-                    0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-                  ])
-                  socket.write(response)
-                  socket.pipe(stream).pipe(socket)
-                }
-              )
-            })
+          if (data[0] !== SOCKS5_VERSION) {
+            socket.destroy()
+            return
           }
+          socket.write(Buffer.from([SOCKS5_VERSION, 0x00])) // No auth required
+
+          socket.once('data', (request) => {
+            const parsed = parseConnectRequest(request)
+            if ('replyCode' in parsed) {
+              socket.end(buildConnectReply(parsed.replyCode))
+              return
+            }
+
+            client.forwardOut(
+              rule.localHost,
+              rule.localPort,
+              parsed.host,
+              parsed.port,
+              (err: any, stream: any) => {
+                if (socket.destroyed) {
+                  if (stream) stream.destroy()
+                  return
+                }
+                if (err) {
+                  socket.end(buildConnectReply(SOCKS5_REPLY.connectionRefused))
+                  return
+                }
+                socket.on('error', () => stream.destroy())
+                stream.on('error', () => socket.destroy())
+                socket.write(buildConnectReply(SOCKS5_REPLY.succeeded))
+                socket.pipe(stream).pipe(socket)
+              }
+            )
+          })
         })
       })
 
@@ -168,8 +173,26 @@ class PortForwardManager {
       if (forward.server) {
         forward.server.close()
       }
+      if (forward.rule.type === 'remote') {
+        this.teardownRemoteForward(forward)
+      }
       this.forwards.delete(ruleId)
       this.notifyStatus(ruleId, 'stopped')
+    }
+  }
+
+  private teardownRemoteForward(forward: ActiveForward): void {
+    const { rule, client, tcpConnectionHandler } = forward
+    // If the session dropped (or reconnected onto a new client), the remote
+    // listener is already gone with the old connection: nothing to undo
+    if (!client || sshManager.getClient(rule.connectionId) !== client) return
+    if (tcpConnectionHandler) {
+      client.removeListener('tcp connection', tcpConnectionHandler)
+    }
+    try {
+      client.unforwardIn(rule.remoteHost, rule.remotePort, () => {})
+    } catch {
+      // Client can disconnect between the liveness check and this call
     }
   }
 

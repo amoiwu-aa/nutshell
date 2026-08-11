@@ -2,6 +2,7 @@ import { sshManager } from '../ssh/SSHManager'
 import { sftpManager } from '../ssh/SFTPManager'
 import { rustCoreService } from '../rust/RustCoreService'
 import { rustRemoteFS } from '../rust/RustRemoteFS'
+import { assessCommandRisk, shellQuote, stripCommandChaining } from './commandRisk'
 
 export interface FileEntry {
   name: string
@@ -27,12 +28,6 @@ export interface SearchResult {
 
 function isRustSession(sessionId: string): boolean {
   return rustCoreService.hasSshSession(sessionId)
-}
-
-function stripCommandChaining(command: string): string {
-  const trimmed = command.trim()
-  const cdPrefix = /^cd\s+(['"])(.*?)\1\s*&&\s*/
-  return trimmed.replace(cdPrefix, '')
 }
 
 function unwrapCommandOutput(output: string): string {
@@ -62,10 +57,6 @@ function formatMtime(value: number): string {
   const hh = String(dt.getHours()).padStart(2, '0')
   const mi = String(dt.getMinutes()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 class WorkspaceService {
@@ -301,7 +292,12 @@ class WorkspaceService {
 
   async runCommand(sessionId: string, rootPath: string, command: string): Promise<string> {
     if (!isRustSession(sessionId)) {
-      return sshManager.exec(sessionId, `cd ${shellQuote(rootPath)} && ${command} 2>&1`, 30000)
+      const risk = assessCommandRisk(command)
+      if (risk.requiresConfirmation) {
+        throw new Error(risk.reason || 'Command blocked by safety policy')
+      }
+      const strippedCommand = stripCommandChaining(command)
+      return sshManager.exec(sessionId, `cd ${shellQuote(rootPath)} && ${strippedCommand} 2>&1`, 30000)
     }
 
     const normalizedCommand = stripCommandChaining(command)

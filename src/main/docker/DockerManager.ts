@@ -74,6 +74,7 @@ const OVERVIEW_SEP = '__NUTSHELL_DOCKER_SEP__'
 
 class DockerManager {
   private activeLogStreams = new Map<string, string>()
+  private activeNodeLogStreams = new Map<string, any>()
 
   private static dockerUnavailable(output: string): boolean {
     return output.includes('command not found') || output.includes('Cannot connect to the Docker daemon')
@@ -199,23 +200,67 @@ class DockerManager {
     return this.exec(sessionId, cmd, 60000)
   }
 
-  async streamContainerLogs(_sessionId: string, _containerId: string): Promise<void> {
-    if (!isRustSession(_sessionId)) {
-      throw new Error('Streaming container logs is not implemented for the current backend')
+  async streamContainerLogs(sessionId: string, containerId: string): Promise<void> {
+    validateDockerParam(containerId, SAFE_DOCKER_ID, 'container ID')
+    this.stopLogStream(containerId)
+
+    if (!isRustSession(sessionId)) {
+      const client = sshManager.getClient(sessionId)
+      if (!client) throw new Error('SSH session not found')
+
+      return new Promise((resolve, reject) => {
+        client.exec(`docker logs -f --tail 200 ${shellQuote(containerId)} 2>&1`, (err, stream) => {
+          if (err) {
+            reject(err)
+            return
+          }
+
+          this.activeNodeLogStreams.set(containerId, stream)
+
+          stream.on('data', (data: Buffer) => {
+            for (const win of BrowserWindow.getAllWindows()) {
+              win.webContents.send('docker:logs', containerId, data.toString('utf-8'))
+            }
+          })
+
+          stream.on('error', () => {
+            if (this.activeNodeLogStreams.get(containerId) === stream) {
+              this.activeNodeLogStreams.delete(containerId)
+            }
+          })
+
+          stream.stderr?.on('error', () => {})
+
+          stream.on('close', () => {
+            if (this.activeNodeLogStreams.get(containerId) === stream) {
+              this.activeNodeLogStreams.delete(containerId)
+            }
+          })
+
+          resolve()
+        })
+      })
     }
 
     const result = await rustCoreService.startDockerLogStream({
-      sessionId: _sessionId,
-      containerId: _containerId,
+      sessionId,
+      containerId,
       tail: '200'
     })
-    this.activeLogStreams.set(_containerId, result.streamId)
+    this.activeLogStreams.set(containerId, result.streamId)
   }
 
-  stopLogStream(_containerId: string): void {
-    const streamId = this.activeLogStreams.get(_containerId)
+  stopLogStream(containerId: string): void {
+    const nodeStream = this.activeNodeLogStreams.get(containerId)
+    if (nodeStream) {
+      this.activeNodeLogStreams.delete(containerId)
+      nodeStream.close()
+      return
+    }
+
+    const streamId = this.activeLogStreams.get(containerId)
     if (streamId) {
-      this.activeLogStreams.delete(_containerId)
+      this.activeLogStreams.delete(containerId)
       rustCoreService.stopDockerLogStream(streamId).catch(() => {})
     }
   }

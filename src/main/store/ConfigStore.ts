@@ -1,6 +1,8 @@
 import Store from 'electron-store'
+import { safeStorage } from 'electron'
 import * as crypto from 'crypto'
 import * as os from 'os'
+import { CredentialCipher } from './credentialCipher'
 
 // Machine-specific key material instead of a hardcoded secret.
 //
@@ -17,8 +19,6 @@ function getMachineKey(includeHostname: boolean): string {
   ].join('|')
   return crypto.createHash('sha256').update(machineInfo).digest('hex')
 }
-
-const CIPHER_PREFIX = 'v2:'
 
 interface ConnectionConfig {
   id: string
@@ -138,8 +138,7 @@ const defaultSettings: AppSettings = {
 
 class ConfigStore {
   private store: Store<StoreSchema>
-  private encryptionKey: string
-  private legacyEncryptionKey: string
+  private cipher: CredentialCipher
 
   constructor() {
     this.store = new Store<StoreSchema>({
@@ -161,9 +160,15 @@ class ConfigStore {
       this.store.set('encryptionSalt', salt)
     }
 
-    // Derive key from machine info + stored salt
-    this.encryptionKey = crypto.scryptSync(getMachineKey(false), salt, 32).toString('hex')
-    this.legacyEncryptionKey = crypto.scryptSync(getMachineKey(true), salt, 32).toString('hex')
+    // configStore is constructed at module load, before app ready, but
+    // safeStorage must not be used until after ready. The cipher only calls
+    // into safeStorage from encrypt/decrypt, which are first reached via IPC
+    // handlers — always post-ready.
+    this.cipher = new CredentialCipher(
+      safeStorage,
+      crypto.scryptSync(getMachineKey(false), salt, 32).toString('hex'),
+      crypto.scryptSync(getMachineKey(true), salt, 32).toString('hex')
+    )
   }
 
   // --- Connections ---
@@ -171,27 +176,28 @@ class ConfigStore {
     const connections = this.store.get('connections', [])
     const decrypted = connections.map((conn) => ({
       ...conn,
-      password: conn.password ? this.decrypt(conn.password) : undefined,
-      passphrase: conn.passphrase ? this.decrypt(conn.passphrase) : undefined
+      password: conn.password ? this.cipher.decrypt(conn.password) : undefined,
+      passphrase: conn.passphrase ? this.cipher.decrypt(conn.passphrase) : undefined
     }))
 
-    const hasLegacyRecords = connections.some(
+    const hasOutdatedRecords = connections.some(
       (conn) =>
-        (conn.password && !conn.password.startsWith(CIPHER_PREFIX)) ||
-        (conn.passphrase && !conn.passphrase.startsWith(CIPHER_PREFIX))
+        (conn.password && !this.cipher.isPreferredFormat(conn.password)) ||
+        (conn.passphrase && !this.cipher.isPreferredFormat(conn.passphrase))
     )
-    if (hasLegacyRecords) {
+    if (hasOutdatedRecords) {
       this.store.set(
         'connections',
         connections.map((conn, index) => ({
           ...conn,
           // Keep the original ciphertext where it couldn't be read: restoring
-          // the old hostname is then still able to recover it.
+          // the old hostname (or the OS keychain) is then still able to
+          // recover it.
           password: decrypted[index].password
-            ? this.encrypt(decrypted[index].password!)
+            ? this.cipher.encrypt(decrypted[index].password!)
             : conn.password,
           passphrase: decrypted[index].passphrase
-            ? this.encrypt(decrypted[index].passphrase!)
+            ? this.cipher.encrypt(decrypted[index].passphrase!)
             : conn.passphrase
         }))
       )
@@ -204,8 +210,8 @@ class ConfigStore {
     const connections = this.store.get('connections', [])
     const encrypted = {
       ...connection,
-      password: connection.password ? this.encrypt(connection.password) : undefined,
-      passphrase: connection.passphrase ? this.encrypt(connection.passphrase) : undefined
+      password: connection.password ? this.cipher.encrypt(connection.password) : undefined,
+      passphrase: connection.passphrase ? this.cipher.encrypt(connection.passphrase) : undefined
     }
 
     const index = connections.findIndex((c) => c.id === connection.id)
@@ -294,45 +300,6 @@ class ConfigStore {
 
   saveSessionState(state: SessionState): void {
     this.store.set('sessionState', state)
-  }
-
-  // --- Encryption helpers ---
-
-  /**
-   * Deliberately unguarded: returning the plaintext on failure would write the
-   * credential to disk unencrypted, and the round-trip would still "work", so
-   * nothing would ever surface the problem.
-   */
-  private encrypt(text: string): string {
-    const key = Buffer.from(this.encryptionKey, 'hex')
-    const iv = crypto.randomBytes(16)
-    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
-    const encrypted = cipher.update(text, 'utf8', 'hex') + cipher.final('hex')
-    return `${CIPHER_PREFIX}${iv.toString('hex')}:${encrypted}`
-  }
-
-  /**
-   * Returns undefined when a stored credential cannot be recovered, so the user
-   * is asked for it again. Returning the ciphertext (the previous behaviour)
-   * sent it to the server as the password and surfaced as "wrong password".
-   */
-  private decrypt(text: string): string | undefined {
-    const isCurrentVersion = text.startsWith(CIPHER_PREFIX)
-    const body = isCurrentVersion ? text.slice(CIPHER_PREFIX.length) : text
-    const [ivHex, encrypted] = body.split(':')
-    if (!ivHex || !encrypted) return undefined
-
-    try {
-      const key = Buffer.from(
-        isCurrentVersion ? this.encryptionKey : this.legacyEncryptionKey,
-        'hex'
-      )
-      const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(ivHex, 'hex'))
-      return decipher.update(encrypted, 'hex', 'utf8') + decipher.final('utf8')
-    } catch {
-      console.warn('[config] a stored credential could not be decrypted and must be re-entered')
-      return undefined
-    }
   }
 }
 

@@ -10,9 +10,12 @@ npm run build        # Production build (electron-vite build)
 npm run build:win    # Build Windows installer (NSIS + portable)
 npm run build:mac    # Build macOS installer
 npm run build:linux  # Build Linux installer
+npm run typecheck    # tsc over tsconfig.web.json and tsconfig.node.json
+npm run lint         # ESLint 10 over src and tests (config: eslint.config.mjs)
+npm test             # vitest run — *.test.ts files co-located with source
 ```
 
-No test runner or linter is configured.
+Tests use Vitest (`*.test.ts` files placed next to the source they cover); linting uses ESLint 10 (flat config in `eslint.config.mjs`). CI (`.github/workflows/ci.yml`) runs typecheck → lint → test → `cargo check` → build.
 
 ## Architecture
 
@@ -47,6 +50,13 @@ IPC handlers are organized per-feature in `src/main/ipc/` (e.g., `sshHandlers.ts
 | RustRemoteFS | `src/main/rust/RustRemoteFS.ts` | Remote filesystem operations routed through the Rust core |
 | KnownHosts | `src/main/ssh/KnownHosts.ts` | Trust-on-first-use host key store, shared by both SSH engines |
 | ConfigStore | `src/main/store/ConfigStore.ts` | electron-store with AES-256-CBC encryption (machine-derived key + per-install salt) |
+
+### Dual SSH Engine Routing
+
+- `settings.useRustSshEngine` defaults to `true`.
+- On `ssh:connect` (`src/main/ipc/sshHandlers.ts`), connections without a `jumpHost` are handled by the Rust sidecar (session ids prefixed `rust-`); connections with a jump host fall back to the Node ssh2 engine (`SSHManager`).
+- Downstream services (`WorkspaceService`, `DockerManager`, SFTP handlers, `ServerMonitor`, port forwarding) pick their implementation per session id by asking `rustCoreService` (e.g. `hasSshSession()`).
+- Most features therefore have two parallel implementations — one Node, one Rust. When changing behavior, consider (and test) both code paths.
 
 ### Renderer Structure
 
